@@ -125,18 +125,17 @@ def signal_label(score):
 
 def fetch_and_analyze(ticker: str) -> dict:
     """
-    Fetch 60 days of daily OHLCV + today's intraday 15-min data for a single ticker.
-    Calculates all indicators on real data.
+    Fetch 250 days of daily OHLCV + today's intraday 15-min data.
+    Adds SMA50/SMA200 trend filter and ATR-based position sizing.
     """
     try:
         tk = yf.Ticker(ticker)
 
-        # 60 days of daily data — enough for EMA20, RSI(14), MACD(26), BB(20), ATR(14)
-        hist = tk.history(period="60d", interval="1d", auto_adjust=True)
-        if hist.empty or len(hist) < 30:
+        # 250 days needed for SMA200
+        hist = tk.history(period="250d", interval="1d", auto_adjust=True)
+        if hist.empty or len(hist) < 50:
             return None
 
-        # Today's intraday 1-day 15m bars for current price
         intra = tk.history(period="1d", interval="15m", auto_adjust=True)
         if not intra.empty:
             current_price = float(intra["Close"].iloc[-1])
@@ -145,12 +144,12 @@ def fetch_and_analyze(ticker: str) -> dict:
             current_price = float(hist["Close"].iloc[-1])
             current_vol_today = float(hist["Volume"].iloc[-1])
 
-        close = hist["Close"].astype(float)
-        high = hist["High"].astype(float)
-        low = hist["Low"].astype(float)
+        close  = hist["Close"].astype(float)
+        high   = hist["High"].astype(float)
+        low    = hist["Low"].astype(float)
         volume = hist["Volume"].astype(float)
 
-        # ── RSI(14) ──────────────────────────────────────────────────
+        # ── RSI(14) ───────────────────────────────────────────────────
         rsi_series = ta.rsi(close, length=14)
         rsi = float(rsi_series.iloc[-1]) if rsi_series is not None and not rsi_series.isna().all() else 50.0
 
@@ -158,19 +157,32 @@ def fetch_and_analyze(ticker: str) -> dict:
         macd_df = ta.macd(close, fast=12, slow=26, signal=9)
         if macd_df is not None and not macd_df.empty:
             hist_col = [c for c in macd_df.columns if "MACDh" in c]
-            macd_col = [c for c in macd_df.columns if c.startswith("MACD_")]
             macd_val = float(macd_df[hist_col[0]].iloc[-1]) if hist_col else 0.0
             prev_macd_val = float(macd_df[hist_col[0]].iloc[-2]) if hist_col and len(macd_df) > 1 else macd_val
             macd_dir = "rising" if macd_val > prev_macd_val else "falling"
         else:
             macd_val, macd_dir = 0.0, "flat"
 
-        # ── EMA(20) ───────────────────────────────────────────────────
+        # ── EMA20, SMA50, SMA200 ──────────────────────────────────────
         ema20_series = ta.ema(close, length=20)
         ema20 = float(ema20_series.iloc[-1]) if ema20_series is not None and not ema20_series.isna().all() else current_price
         pct_above_ema = (current_price - ema20) / ema20 * 100
 
-        # ── Bollinger Bands(20, 2) ────────────────────────────────────
+        sma50  = float(close.tail(50).mean())
+        sma200 = float(close.tail(200).mean()) if len(close) >= 200 else float(close.mean())
+        pct_above_sma50  = (current_price - sma50)  / sma50  * 100
+        pct_above_sma200 = (current_price - sma200) / sma200 * 100
+
+        # ── Trend filter: bullish only if price > SMA50 > SMA200 ─────
+        trend_bullish = (current_price > sma50) and (sma50 > sma200)
+        trend_status  = (
+            "Strong uptrend" if trend_bullish and pct_above_sma200 > 5
+            else "Uptrend"   if trend_bullish
+            else "Downtrend" if current_price < sma200
+            else "Mixed"
+        )
+
+        # ── Bollinger Bands(20,2) ─────────────────────────────────────
         bb_df = ta.bbands(close, length=20, std=2)
         if bb_df is not None and not bb_df.empty:
             lower_col = [c for c in bb_df.columns if "BBL" in c]
@@ -178,7 +190,7 @@ def fetch_and_analyze(ticker: str) -> dict:
             bb_lower = float(bb_df[lower_col[0]].iloc[-1]) if lower_col else current_price * 0.95
             bb_upper = float(bb_df[upper_col[0]].iloc[-1]) if upper_col else current_price * 1.05
             bb_range = bb_upper - bb_lower
-            bb_pos = (current_price - bb_lower) / bb_range if bb_range > 0 else 0.5
+            bb_pos   = (current_price - bb_lower) / bb_range if bb_range > 0 else 0.5
         else:
             bb_lower, bb_upper, bb_pos = current_price * 0.95, current_price * 1.05, 0.5
 
@@ -187,83 +199,108 @@ def fetch_and_analyze(ticker: str) -> dict:
         atr = float(atr_series.iloc[-1]) if atr_series is not None and not atr_series.isna().all() else current_price * 0.015
 
         # ── Volume vs 20-day average ──────────────────────────────────
-        avg_vol_20 = float(volume.iloc[-21:-1].mean()) if len(volume) > 21 else float(volume.mean())
-        # Scale today's intraday volume to full-day equivalent
-        vol_mult = (current_vol_today / avg_vol_20) if avg_vol_20 > 0 else 1.0
+        avg_vol_20  = float(volume.iloc[-21:-1].mean()) if len(volume) > 21 else float(volume.mean())
+        vol_mult    = (current_vol_today / avg_vol_20) if avg_vol_20 > 0 else 1.0
 
         # ── 1-day price change ────────────────────────────────────────
-        prev_close = float(hist["Close"].iloc[-2]) if len(hist) > 1 else current_price
+        prev_close   = float(hist["Close"].iloc[-2]) if len(hist) > 1 else current_price
         price_change = (current_price - prev_close) / prev_close * 100
 
         # ── 20-day price history for sparkline ───────────────────────
         history_20 = [round(float(p), 2) for p in close.iloc[-20:].tolist()]
 
-        # ── Signal score ──────────────────────────────────────────────
-        score = compute_signal_score(rsi, macd_val, macd_dir, pct_above_ema, vol_mult, bb_pos, price_change)
+        # ── Signal score (trend filter gates the final signal) ────────
+        score  = compute_signal_score(rsi, macd_val, macd_dir, pct_above_ema, vol_mult, bb_pos, price_change)
+        # Downgrade to max "hold" if trend filter fails
+        if not trend_bullish and score >= 6:
+            score = 5
         signal = signal_label(score)
 
+        # ── Position sizing: risk 1% of €10,000 account per trade ────
+        account_size  = 10000.0
+        risk_pct      = 0.01
+        risk_euros    = account_size * risk_pct          # €100
+        stop_distance = atr * 2
+        shares_sized  = risk_euros / stop_distance if stop_distance > 0 else 0
+        position_euros = shares_sized * current_price
+        position_pct   = (position_euros / account_size) * 100
+
+        stop   = current_price - atr * 2
+        target = current_price + atr * 3
+        rr     = round(atr * 3 / (atr * 2), 1)
+
         # ── Buy / sell narratives ─────────────────────────────────────
-        buy_points = []
-        sell_points = []
+        buy_points, sell_points = [], []
 
         if signal in ("strong-buy", "buy"):
             buy_points.append(f"Entry near current price ${current_price:.2f}")
+            if trend_bullish:
+                buy_points.append(f"Trend filter PASSED — price above SMA50 (${sma50:.2f}) and SMA50 above SMA200 (${sma200:.2f})")
             if rsi < 45:
                 buy_points.append(f"RSI at {rsi:.1f} — oversold conditions support entry")
             if macd_val > 0 and macd_dir == "rising":
                 buy_points.append("MACD histogram positive and rising — bullish momentum confirmed")
             if pct_above_ema > 0:
-                buy_points.append(f"Price {pct_above_ema:.1f}% above EMA20 (${ema20:.2f}) — uptrend intact")
+                buy_points.append(f"Price {pct_above_ema:.1f}% above EMA20 (${ema20:.2f}) — short-term uptrend intact")
             if vol_mult > 1.5:
-                buy_points.append(f"Volume {vol_mult:.1f}× 20-day average — strong participation")
+                buy_points.append(f"Volume {vol_mult:.1f}x 20-day average — strong participation")
             if bb_pos < 0.3:
                 buy_points.append("Price near lower Bollinger Band — mean-reversion setup")
+            buy_points.append(f"Position size: {shares_sized:.2f} shares (€{position_euros:.0f} = {position_pct:.1f}% of €10k account, risking €{risk_euros:.0f})")
         else:
+            if not trend_bullish:
+                buy_points.append(f"Trend filter FAILED — price (${current_price:.2f}) must be above SMA50 (${sma50:.2f}) and SMA50 above SMA200 (${sma200:.2f})")
             buy_points.append(f"Wait — RSI at {rsi:.1f}, look for drop below 40 before entering")
             buy_points.append(f"Watch for price reclaim above EMA20 (${ema20:.2f})")
             if macd_val < 0:
                 buy_points.append("Wait for MACD histogram to cross back into positive territory")
 
-        stop = current_price - atr * 2
-        target = current_price + atr * 3
-        rr = round(atr * 3 / (atr * 2), 1)
-
-        sell_points.append(f"Stop loss: ${stop:.2f} (2× ATR below entry) — exit immediately if breached")
-        sell_points.append(f"Primary target: ${target:.2f} (3× ATR above entry) — take full profit here")
+        sell_points.append(f"Stop loss: ${stop:.2f} (2x ATR below entry) — exit immediately if breached")
+        sell_points.append(f"Primary target: ${target:.2f} (3x ATR above entry) — take full profit here")
         if rsi > 68:
-            sell_points.append(f"RSI at {rsi:.1f} — reduce size or wait for pullback before entry")
+            sell_points.append(f"RSI at {rsi:.1f} — overbought, reduce size or wait for pullback")
         if macd_val > 0 and macd_dir == "falling":
             sell_points.append("MACD flattening — momentum weakening, tighten stop to breakeven")
         if bb_pos > 0.8:
             sell_points.append("Price near upper Bollinger Band — consider partial profit taking (50%)")
-        sell_points.append(f"Also exit on daily close below EMA20 (${ema20:.2f}) or gap-down open >2%")
+        sell_points.append(f"Also exit on daily close below SMA50 (${sma50:.2f}) or gap-down open >2%")
 
         return {
-            "ticker": ticker,
-            "name": tk.info.get("shortName", ticker) if hasattr(tk, "info") else ticker,
-            "sector": SECTOR_MAP.get(ticker, tk.info.get("sector", "Unknown") if hasattr(tk, "info") else "Unknown"),
-            "price": round(current_price, 2),
-            "change": round(price_change, 2),
-            "rsi": round(rsi, 1),
-            "macd_val": round(macd_val, 3),
-            "macd_dir": macd_dir,
-            "ema20": round(ema20, 2),
-            "pct_above_ema": round(pct_above_ema, 2),
-            "bb_lower": round(bb_lower, 2),
-            "bb_upper": round(bb_upper, 2),
-            "bb_pos": round(bb_pos, 3),
-            "atr": round(atr, 2),
-            "vol_mult": round(vol_mult, 2),
-            "score": score,
-            "signal": signal,
-            "stop": round(stop, 2),
-            "target": round(target, 2),
-            "risk_reward": rr,
-            "history": history_20,
-            "buy_points": buy_points,
-            "sell_points": sell_points,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-            "data_note": "15-min delayed via Yahoo Finance",
+            "ticker":            ticker,
+            "name":              tk.info.get("shortName", ticker) if hasattr(tk, "info") else ticker,
+            "sector":            SECTOR_MAP.get(ticker, tk.info.get("sector", "Unknown") if hasattr(tk, "info") else "Unknown"),
+            "price":             round(current_price, 2),
+            "change":            round(price_change, 2),
+            "rsi":               round(rsi, 1),
+            "macd_val":          round(macd_val, 3),
+            "macd_dir":          macd_dir,
+            "ema20":             round(ema20, 2),
+            "sma50":             round(sma50, 2),
+            "sma200":            round(sma200, 2),
+            "pct_above_ema":     round(pct_above_ema, 2),
+            "pct_above_sma50":   round(pct_above_sma50, 2),
+            "pct_above_sma200":  round(pct_above_sma200, 2),
+            "trend_bullish":     trend_bullish,
+            "trend_status":      trend_status,
+            "bb_lower":          round(bb_lower, 2),
+            "bb_upper":          round(bb_upper, 2),
+            "bb_pos":            round(bb_pos, 3),
+            "atr":               round(atr, 2),
+            "vol_mult":          round(vol_mult, 2),
+            "score":             score,
+            "signal":            signal,
+            "stop":              round(stop, 2),
+            "target":            round(target, 2),
+            "risk_reward":       rr,
+            "position_shares":   round(shares_sized, 2),
+            "position_euros":    round(position_euros, 0),
+            "position_pct":      round(position_pct, 1),
+            "risk_euros":        round(risk_euros, 0),
+            "history":           history_20,
+            "buy_points":        buy_points,
+            "sell_points":       sell_points,
+            "updated_at":        datetime.now(timezone.utc).isoformat(),
+            "data_note":         "15-min delayed via Yahoo Finance",
         }
 
     except Exception:
@@ -530,14 +567,15 @@ tr:last-child td{border-bottom:none}tbody tr{cursor:pointer;transition:backgroun
             <div style="overflow-x:auto">
               <table style="font-size:12px">
                 <thead><tr>
-                  <th style="width:10%">#</th>
-                  <th style="width:16%">Buy date</th>
-                  <th style="width:10%">Buy $</th>
-                  <th style="width:16%">Sell date</th>
-                  <th style="width:10%">Sell $</th>
-                  <th style="width:10%">Shares</th>
-                  <th style="width:12%">P&amp;L &euro;</th>
-                  <th style="width:16%">Exit reason</th>
+                  <th style="width:8%">#</th>
+                  <th style="width:14%">Buy date</th>
+                  <th style="width:9%">Buy $</th>
+                  <th style="width:14%">Sell date</th>
+                  <th style="width:9%">Sell $</th>
+                  <th style="width:9%">Invested</th>
+                  <th style="width:10%">P&amp;L €</th>
+                  <th style="width:9%">%</th>
+                  <th style="width:18%">Exit reason</th>
                 </tr></thead>
                 <tbody id="bt-trades"></tbody>
               </table>
@@ -699,6 +737,9 @@ async function showDetail(ticker){
       {l:'EMA20 '+(s.pct_above_ema>=0?'+':'')+fmt(s.pct_above_ema,1)+'%',c:s.pct_above_ema>0?'bull':'bear'},
       {l:'Vol '+fmt(s.vol_mult,2)+'x',c:s.vol_mult>1.5?'bull':s.vol_mult<0.8?'bear':'neut'},
       {l:'BB '+(s.bb_pos*100).toFixed(0)+'%',c:s.bb_pos<0.2?'bull':s.bb_pos>0.8?'bear':'neut'},
+      {l:'Trend: '+(s.trend_status||'Unknown'),c:s.trend_bullish?'bull':'bear'},
+      {l:'SMA50 '+(s.pct_above_sma50!=null?(s.pct_above_sma50>=0?'+':'')+fmt(s.pct_above_sma50,1)+'%':'—'),c:s.pct_above_sma50>=0?'bull':'bear'},
+      {l:'SMA200 '+(s.pct_above_sma200!=null?(s.pct_above_sma200>=0?'+':'')+fmt(s.pct_above_sma200,1)+'%':'—'),c:s.pct_above_sma200>=0?'bull':'bear'},
     ].map(i=>'<span class="itag '+i.c+'">'+i.l+'</span>').join('');
     $('dbuy').innerHTML=(s.buy_points||[]).map(p=>'· '+p).join('<br>');
     $('dsell').innerHTML=(s.sell_points||[]).map(p=>'· '+p).join('<br>');
@@ -817,13 +858,25 @@ async function runBacktest(){
         <td>$${parseFloat(t.buy_price).toFixed(2)}</td>
         <td>${t.sell_date||'Open'}</td>
         <td>${t.sell_price?'$'+parseFloat(t.sell_price).toFixed(2):'-'}</td>
-        <td>${t.shares}</td>
+        <td>€${t.invested?Math.round(t.invested):'-'}</td>
         <td class="${t.pnl>=0?'bt-win':'bt-loss'}" style="font-weight:600">${t.pnl>=0?'+':''}€${Math.abs(t.pnl).toFixed(0)}</td>
+        <td class="${t.pnl_pct>=0?'bt-win':'bt-loss'}">${t.pnl_pct>=0?'+':''}${parseFloat(t.pnl_pct).toFixed(1)}%</td>
         <td style="font-size:11px;color:#999">${t.exit_reason||'-'}</td>
       </tr>`).join('');
 
     $('bt-loading').style.display='none';
     $('bt-results').style.display='';
+
+    // Show strategy notes
+    const notes=d.strategy_notes||[];
+    if(notes.length){
+      const existing=$('bt-strategy-notes');
+      const notesHtml='<div id="bt-strategy-notes" style="background:#e8f5ea;border:.5px solid #a8d5b0;border-radius:var(--rl);padding:12px 16px;margin-bottom:1rem;font-size:12px;color:#1a5c28">'+
+        '<strong style="display:block;margin-bottom:6px">Strategy rules active in this backtest:</strong>'+
+        notes.map(n=>'· '+n).join('<br>')+
+        '</div>';
+      $('bt-results').insertAdjacentHTML('afterbegin',notesHtml);
+    }
   }catch(e){
     $('bt-loading').style.display='none';
     $('bt-err').style.display='';
@@ -872,6 +925,9 @@ async function checkTicker(){
       {l:'EMA20 '+(s.pct_above_ema>=0?'+':'')+fmt(s.pct_above_ema,1)+'%',c:s.pct_above_ema>0?'bull':'bear'},
       {l:'Vol '+fmt(s.vol_mult,2)+'x',c:s.vol_mult>1.5?'bull':s.vol_mult<0.8?'bear':'neut'},
       {l:'BB '+(s.bb_pos*100).toFixed(0)+'%',c:s.bb_pos<0.2?'bull':s.bb_pos>0.8?'bear':'neut'},
+      {l:'Trend: '+(s.trend_status||'Unknown'),c:s.trend_bullish?'bull':'bear'},
+      {l:'SMA50 '+(s.pct_above_sma50!=null?(s.pct_above_sma50>=0?'+':'')+fmt(s.pct_above_sma50,1)+'%':'—'),c:s.pct_above_sma50>=0?'bull':'bear'},
+      {l:'SMA200 '+(s.pct_above_sma200!=null?(s.pct_above_sma200>=0?'+':'')+fmt(s.pct_above_sma200,1)+'%':'—'),c:s.pct_above_sma200>=0?'bull':'bear'},
     ].map(i=>'<span class="itag '+i.c+'">'+i.l+'</span>').join('');
 
     $('ck-buy').innerHTML=(s.buy_points||[]).map(p=>'· '+p).join('<br>');
@@ -1185,13 +1241,17 @@ async def single_stock(ticker: str):
 def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
     """
     Replay signal logic on historical daily OHLCV.
-    Buy when score >= 6. Sell when score <= 3, stop hit, or target hit.
-    One position at a time. Fixed trade_size euros per trade.
+    Now includes:
+    - Trend filter: only buy when price > SMA50 > SMA200
+    - Volatility position sizing: risk 1% of portfolio per trade (position = risk / ATR*2)
+    - Exits: stop loss, target hit, score <= 3, or trend filter breaks
     """
     try:
         tk = yf.Ticker(ticker)
-        hist = tk.history(period=period, interval="1d", auto_adjust=True)
-        if hist.empty or len(hist) < 60:
+        # Need extra history for SMA200 warmup — fetch max available for long periods
+        fetch_period = "max" if period == "5y" else period
+        hist = tk.history(period=fetch_period, interval="1d", auto_adjust=True)
+        if hist.empty or len(hist) < 220:
             return None
 
         close  = hist["Close"].astype(float)
@@ -1199,6 +1259,11 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
         low    = hist["Low"].astype(float)
         volume = hist["Volume"].astype(float)
         dates  = hist.index
+
+        # Trim to requested period after warmup
+        period_bars = {"1y": 252, "2y": 504, "5y": 1260}
+        max_bars = period_bars.get(period, 252)
+        start_i = max(210, len(close) - max_bars)  # always keep 210 bars for SMA200 warmup
 
         rsi_s   = ta.rsi(close, length=14)
         macd_df = ta.macd(close, fast=12, slow=26, signal=9)
@@ -1210,14 +1275,16 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
         lower_col = [c for c in bb_df.columns if "BBL" in c] if bb_df is not None else []
         upper_col = [c for c in bb_df.columns if "BBU" in c] if bb_df is not None else []
 
-        trades        = []
-        cash          = trade_size
-        initial       = trade_size
-        position      = None
-        equity_curve  = []
-        buy_hold_start = float(close.iloc[60])
+        trades         = []
+        portfolio      = float(trade_size)   # total portfolio value tracks with P&L
+        cash           = float(trade_size)
+        initial        = float(trade_size)
+        risk_pct       = 0.01                # risk 1% of portfolio per trade
+        position       = None
+        equity_curve   = []
+        buy_hold_start = float(close.iloc[start_i])
 
-        for i in range(60, len(close)):
+        for i in range(start_i, len(close)):
             price  = float(close.iloc[i])
             date_s = str(dates[i].date())
 
@@ -1226,7 +1293,7 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
                 return float(v) if v is not None and not pd.isna(v) else default
 
             rsi      = safe(rsi_s, 50.0)
-            macd_val = float(macd_df[hist_col[0]].iloc[i]) if hist_col and not pd.isna(macd_df[hist_col[0]].iloc[i]) else 0.0
+            macd_val = float(macd_df[hist_col[0]].iloc[i])   if hist_col and not pd.isna(macd_df[hist_col[0]].iloc[i])   else 0.0
             prev_mac = float(macd_df[hist_col[0]].iloc[i-1]) if hist_col and not pd.isna(macd_df[hist_col[0]].iloc[i-1]) else macd_val
             macd_dir = "rising" if macd_val > prev_mac else "falling"
             ema20    = safe(ema20_s, price)
@@ -1237,6 +1304,13 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
             bb_range = bb_upper - bb_lower
             bb_pos   = (price - bb_lower) / bb_range if bb_range > 0 else 0.5
 
+            # SMA50 and SMA200 — rolling window
+            sma50  = float(close.iloc[max(0, i-50):i+1].mean())
+            sma200 = float(close.iloc[max(0, i-200):i+1].mean())
+
+            # Trend filter
+            trend_ok = (price > sma50) and (sma50 > sma200)
+
             pct_above_ema = (price - ema20) / ema20 * 100
             prev_price    = float(close.iloc[i - 1]) if i > 0 else price
             price_change  = (price - prev_price) / prev_price * 100
@@ -1245,8 +1319,11 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
             vol_mult      = float(volume.iloc[i]) / vol_avg if vol_avg > 0 else 1.0
 
             score = compute_signal_score(rsi, macd_val, macd_dir, pct_above_ema, vol_mult, bb_pos, price_change)
+            # Trend filter gates the buy signal
+            if not trend_ok and score >= 6:
+                score = 5
 
-            # Exit logic
+            # ── Exit logic ────────────────────────────────────────────
             if position is not None:
                 exit_reason = exit_price = None
                 if price <= position["stop"]:
@@ -1255,62 +1332,79 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
                     exit_reason, exit_price = "Target hit", position["target"]
                 elif score <= 3:
                     exit_reason, exit_price = "Signal weak", price
+                elif not trend_ok:
+                    exit_reason, exit_price = "Trend broke", price
 
                 if exit_reason:
-                    proceeds = position["shares"] * exit_price
-                    pnl      = proceeds - trade_size
-                    pnl_pct  = (exit_price - position["buy_price"]) / position["buy_price"] * 100
-                    cash    += proceeds
+                    proceeds   = position["shares"] * exit_price
+                    cost_basis = position["cost_basis"]
+                    pnl        = proceeds - cost_basis
+                    pnl_pct    = (exit_price - position["buy_price"]) / position["buy_price"] * 100
+                    cash      += proceeds
+                    portfolio  = cash   # when flat, portfolio = cash
                     trades.append({
                         "buy_date":    position["buy_date"],
                         "buy_price":   round(position["buy_price"], 2),
                         "sell_date":   date_s,
                         "sell_price":  round(exit_price, 2),
                         "shares":      round(position["shares"], 4),
+                        "invested":    round(cost_basis, 2),
                         "pnl":         round(pnl, 2),
                         "pnl_pct":     round(pnl_pct, 2),
                         "exit_reason": exit_reason,
                     })
                     position = None
 
-            # Entry logic
-            if position is None and score >= 6 and cash >= trade_size * 0.5:
-                shares    = trade_size / price
-                cash     -= trade_size
-                position  = {
-                    "shares":    shares,
-                    "buy_price": price,
-                    "stop":      price - atr * 2,
-                    "target":    price + atr * 3,
-                    "buy_date":  date_s,
-                }
+            # ── Entry logic with volatility-based position sizing ─────
+            if position is None and score >= 6 and trend_ok:
+                risk_amount   = portfolio * risk_pct         # 1% of current portfolio
+                stop_distance = atr * 2
+                shares        = risk_amount / stop_distance if stop_distance > 0 else 0
+                cost_basis    = shares * price
+                # Only enter if we have enough cash and position is reasonable
+                if shares > 0 and cost_basis <= cash and cost_basis >= 10:
+                    cash     -= cost_basis
+                    position  = {
+                        "shares":     shares,
+                        "buy_price":  price,
+                        "cost_basis": cost_basis,
+                        "stop":       price - atr * 2,
+                        "target":     price + atr * 3,
+                        "buy_date":   date_s,
+                    }
 
             portfolio_val = cash + (position["shares"] * price if position else 0)
             buy_hold_val  = initial * (price / buy_hold_start)
-            equity_curve.append({"date": date_s, "value": round(portfolio_val, 2), "buy_hold": round(buy_hold_val, 2)})
+            equity_curve.append({
+                "date":     date_s,
+                "value":    round(portfolio_val, 2),
+                "buy_hold": round(buy_hold_val, 2),
+            })
+            if position is None:
+                portfolio = portfolio_val
 
         # Close open position at last price
         if position is not None:
-            lp       = float(close.iloc[-1])
-            proceeds = position["shares"] * lp
-            pnl      = proceeds - trade_size
-            pnl_pct  = (lp - position["buy_price"]) / position["buy_price"] * 100
+            lp         = float(close.iloc[-1])
+            proceeds   = position["shares"] * lp
+            pnl        = proceeds - position["cost_basis"]
+            pnl_pct    = (lp - position["buy_price"]) / position["buy_price"] * 100
             trades.append({
                 "buy_date":    position["buy_date"],
                 "buy_price":   round(position["buy_price"], 2),
                 "sell_date":   "Open",
                 "sell_price":  None,
                 "shares":      round(position["shares"], 4),
+                "invested":    round(position["cost_basis"], 2),
                 "pnl":         round(pnl, 2),
                 "pnl_pct":     round(pnl_pct, 2),
                 "exit_reason": "Still open",
             })
-            cash += proceeds
 
+        final_value    = equity_curve[-1]["value"] if equity_curve else initial
+        total_pnl      = final_value - initial
         total_trades   = len(trades)
         winning_trades = sum(1 for t in trades if t["pnl"] > 0)
-        total_pnl      = sum(t["pnl"] for t in trades)
-        final_value    = initial + total_pnl
         pnl_pcts       = [t["pnl_pct"] for t in trades]
 
         peak = initial
@@ -1320,7 +1414,7 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
             dd   = (peak - pt["value"]) / peak * 100 if peak > 0 else 0
             max_dd = max(max_dd, dd)
 
-        step = max(1, len(equity_curve) // 300)
+        step    = max(1, len(equity_curve) // 300)
         eq_thin = equity_curve[::step]
         if equity_curve and equity_curve[-1] != eq_thin[-1]:
             eq_thin.append(equity_curve[-1])
@@ -1342,12 +1436,18 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
             "max_drawdown_pct": round(max_dd, 2),
             "trades":           trades,
             "equity_curve":     eq_thin,
+            "strategy_notes":   [
+                "Trend filter active: only buys when price > SMA50 > SMA200",
+                "Position sizing: risks 1% of portfolio per trade (ATR-based)",
+                f"Exit triggers: stop loss (2x ATR), target (3x ATR), weak signal (score ≤3), trend break",
+            ],
             "generated_at":     datetime.now(timezone.utc).isoformat(),
         }
 
     except Exception:
         print(f"Backtest error {ticker}: {traceback.format_exc()}")
         return None
+
 
 
 @app.get("/backtest/{ticker}")
