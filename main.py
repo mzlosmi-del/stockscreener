@@ -34,6 +34,22 @@ DEFAULT_TICKERS = [
     "MRK", "ABBV", "KO", "PFE", "BA", "CAT", "GE", "AMD", "CRM", "NOW",
 ]
 
+# Extended universe for the strong-buy hunter
+_HUNT_RAW = [
+    "NVDA","AAPL","MSFT","META","GOOGL","AMZN","TSLA","AMD","CRM","NOW",
+    "ORCL","ADBE","QCOM","INTC","TXN","AMAT","LRCX","KLAC","MU","SNPS",
+    "JPM","BAC","WFC","GS","MS","BLK","SCHW","AXP","V","MA","PYPL","COF",
+    "JNJ","UNH","LLY","ABBV","MRK","PFE","TMO","ABT","DHR","AMGN","GILD","REGN","VRTX",
+    "HD","LOW","TGT","WMT","COST","MCD","SBUX","NKE","PG","KO","PEP","PM",
+    "XOM","CVX","COP","SLB","EOG","MPC","VLO","PSX",
+    "BA","CAT","GE","HON","MMM","UPS","FDX","RTX","LMT","NOC","DE","EMR","ETN",
+    "NFLX","DIS","CMCSA","T","VZ","TMUS","SNAP","UBER",
+    "AMT","PLD","EQIX","NEE","DUK","SO",
+    "ISRG","SYK","BSX","ZTS","IDXX","MRNA","BNTX",
+]
+_seen = set()
+HUNT_UNIVERSE = [x for x in _HUNT_RAW if not (x in _seen or _seen.add(x))]
+
 SECTOR_MAP = {
     "NVDA": "Technology", "AAPL": "Technology", "MSFT": "Technology",
     "META": "Technology", "GOOGL": "Technology", "AMZN": "Technology",
@@ -335,6 +351,17 @@ tr:last-child td{border-bottom:none}tbody tr{cursor:pointer;transition:backgroun
 .spin{display:inline-block;animation:sp .8s linear infinite}
 @keyframes sp{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 .note{font-size:11px;color:var(--txt3);margin-top:10px}
+.hunt-card{background:var(--bg);border-radius:var(--rl);border:.5px solid var(--border);padding:16px;margin-bottom:12px}
+.hunt-card-top{display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;margin-bottom:12px}
+.hunt-card-ticker{font-size:18px;font-weight:700}
+.hunt-card-name{font-size:12px;color:var(--txt2);margin-top:2px}
+.hunt-card-price{font-size:18px;font-weight:600;text-align:right}
+.hunt-card-chg{font-size:13px;text-align:right;margin-top:2px}
+.hunt-card-body{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.hunt-stat-label{font-size:11px;color:var(--txt3);margin-bottom:2px}
+.hunt-stat-value{font-size:14px;font-weight:600}
+.hunt-points{font-size:13px;line-height:1.65;color:var(--txt2);margin-bottom:12px}
+.hunt-risk{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;background:var(--bg2);border-radius:var(--r);padding:10px 12px;font-size:12px}
 </style>
 </head>
 <body>
@@ -373,6 +400,7 @@ tr:last-child td{border-bottom:none}tbody tr{cursor:pointer;transition:backgroun
     </div>
     <div class="tabs">
       <div class="tab active" id="t-screen" onclick="setTab('screen')">Screener</div>
+      <div class="tab" id="t-hunt" onclick="setTab('hunt')">&#128269; Find 5 Strong Buys</div>
       <div class="tab" id="t-watch" onclick="setTab('watch')">Watchlist</div>
     </div>
     <div id="tab-screen">
@@ -386,7 +414,30 @@ tr:last-child td{border-bottom:none}tbody tr{cursor:pointer;transition:backgroun
         </tr></thead><tbody id="tbody"></tbody></table>
       </div>
     </div>
-    <div id="tab-watch" style="display:none">
+    <div id="tab-hunt" style="display:none">
+      <div id="hunt-idle" style="text-align:center;padding:2.5rem 1rem">
+        <div style="font-size:32px;margin-bottom:12px">&#128269;</div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:8px">Strong Buy Hunter</div>
+        <div style="font-size:13px;color:#666;margin-bottom:20px;max-width:400px;margin-left:auto;margin-right:auto">Scans up to 100 US large &amp; mid-cap stocks in batches. Stops the moment it finds 5 strong buys so you get results fast.</div>
+        <button class="btnp" onclick="startHunt()">&#128269; Hunt for Strong Buys</button>
+      </div>
+      <div id="hunt-loading" style="display:none;text-align:center;padding:2.5rem 1rem">
+        <div style="font-size:13px;color:#666;margin-bottom:12px">Scanning market for strong buys<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>
+        <div id="hunt-progress" style="font-size:22px;font-weight:600;color:#2d7a3a;margin-bottom:4px">0 / 5</div>
+        <div id="hunt-scanned" style="font-size:12px;color:#999">0 stocks scanned</div>
+        <div style="width:200px;height:4px;background:rgba(0,0,0,0.1);border-radius:2px;margin:12px auto 0">
+          <div id="hunt-bar" style="height:4px;background:#2d7a3a;border-radius:2px;width:0%;transition:width .4s"></div>
+        </div>
+      </div>
+      <div id="hunt-results" style="display:none">
+        <div id="hunt-summary" style="margin-bottom:1rem;padding:12px 16px;border-radius:var(--rl);font-size:13px"></div>
+        <div id="hunt-cards"></div>
+        <div style="text-align:center;margin-top:1rem">
+          <button class="btnp" onclick="startHunt()">&#128269; Hunt Again</button>
+        </div>
+      </div>
+      <div id="hunt-err" style="display:none"></div>
+    </div>
       <div id="we" style="text-align:center;padding:3rem;color:#999;font-size:14px">Click any stock then add to watchlist.</div>
       <div id="wt"></div>
     </div>
@@ -574,8 +625,90 @@ function renderWatchlist(){
   '</tbody></table></div>';
 }
 function setTab(name){
-  ['screen','watch'].forEach(t=>{$('t-'+t).classList.toggle('active',t===name);$('tab-'+t).style.display=t===name?'':'none';});
+  ['screen','hunt','watch'].forEach(t=>{
+    const el=$('t-'+t);
+    if(el) el.classList.toggle('active',t===name);
+    const panel=$('tab-'+t);
+    if(panel) panel.style.display=t===name?'':'none';
+  });
   if(name==='watch')renderWatchlist();
+}
+
+async function startHunt(){
+  $('hunt-idle').style.display='none';
+  $('hunt-results').style.display='none';
+  $('hunt-err').style.display='none';
+  $('hunt-loading').style.display='';
+  $('hunt-progress').textContent='0 / 5';
+  $('hunt-scanned').textContent='0 stocks scanned';
+  $('hunt-bar').style.width='0%';
+
+  // Poll /hunt and stream progress via repeated fast calls
+  // We call /hunt which returns when done; show animated progress while waiting
+  let tick=0;
+  const timer=setInterval(()=>{
+    tick++;
+    const fake=Math.min(4,Math.floor(tick/3));
+    $('hunt-progress').textContent=fake+' / 5';
+    $('hunt-scanned').textContent=(tick*8)+' stocks scanned...';
+    $('hunt-bar').style.width=(fake/5*80)+'%';
+  },800);
+
+  try{
+    const res=await fetch(API+'/hunt?target=5');
+    clearInterval(timer);
+    if(!res.ok)throw new Error('Server error '+res.status);
+    const data=await res.json();
+    const found=data.strong_buys||[];
+    $('hunt-progress').textContent=found.length+' / 5';
+    $('hunt-scanned').textContent=data.scanned+' stocks scanned';
+    $('hunt-bar').style.width='100%';
+
+    setTimeout(()=>{
+      $('hunt-loading').style.display='none';
+      $('hunt-results').style.display='';
+      const complete=data.complete;
+      const sum=$('hunt-summary');
+      if(complete){
+        sum.style.cssText='background:#e8f5ea;border:.5px solid #a8d5b0;border-radius:var(--rl);color:#1a5c28';
+        sum.innerHTML='<strong>Found '+found.length+' strong buys</strong> after scanning '+data.scanned+' stocks across the US market.';
+      } else {
+        sum.style.cssText='background:#fef9e7;border:.5px solid #e8d08a;border-radius:var(--rl);color:#7a6520';
+        sum.innerHTML='<strong>Found '+found.length+' strong buy'+(found.length!==1?'s':'')+' out of '+data.target+' target</strong> after scanning all '+data.scanned+' stocks. Market may be in risk-off mode — fewer setups available.';
+      }
+      $('hunt-cards').innerHTML=found.map(s=>`
+        <div class="hunt-card" onclick="showDetail('${s.ticker}')">
+          <div class="hunt-card-top">
+            <div>
+              <div class="hunt-card-ticker">${s.ticker} <span class="pill sb" style="font-size:12px;vertical-align:middle">Strong buy</span></div>
+              <div class="hunt-card-name">${s.name||''} &middot; ${s.sector||''}</div>
+            </div>
+            <div>
+              <div class="hunt-card-price">$${fmt(s.price)}</div>
+              <div class="hunt-card-chg ${s.change>=0?'gn':'rd'}">${fmtP(s.change)} today</div>
+            </div>
+          </div>
+          <div class="hunt-card-body">
+            <div><div class="hunt-stat-label">Signal score</div><div class="hunt-stat-value" style="color:#2d7a3a">${s.score}/10</div></div>
+            <div><div class="hunt-stat-label">RSI (14)</div><div class="hunt-stat-value" style="color:${s.rsi<35?'#2d7a3a':s.rsi>70?'#b03030':'inherit'}">${fmt(s.rsi,1)}</div></div>
+            <div><div class="hunt-stat-label">MACD</div><div class="hunt-stat-value ${s.macd_val>=0?'gn':'rd'}">${s.macd_val>=0?'+':''}${fmt(s.macd_val,2)}</div></div>
+            <div><div class="hunt-stat-label">Volume</div><div class="hunt-stat-value">${fmt(s.vol_mult,2)}x avg</div></div>
+          </div>
+          <div class="hunt-points">${(s.buy_points||[]).map(p=>'&#183; '+p).join('<br>')}</div>
+          <div class="hunt-risk">
+            <div><div class="hunt-stat-label">Stop loss</div><div style="font-weight:600;color:#b03030">$${fmt(s.stop)}</div></div>
+            <div><div class="hunt-stat-label">Target</div><div style="font-weight:600;color:#2d7a3a">$${fmt(s.target)}</div></div>
+            <div><div class="hunt-stat-label">Risk/reward</div><div style="font-weight:600">1:${fmt(s.risk_reward,1)}</div></div>
+          </div>
+          <div style="margin-top:10px;font-size:12px;color:#999">Click for full analysis &#8594;</div>
+        </div>`).join('');
+    },400);
+  }catch(e){
+    clearInterval(timer);
+    $('hunt-loading').style.display='none';
+    $('hunt-err').style.display='';
+    $('hunt-err').innerHTML='<div class="ebox">Hunt failed: '+e.message+'</div>';
+  }
 }
 $('rbtn').addEventListener('click',load);
 $('backbtn').addEventListener('click',showMain);
@@ -686,6 +819,48 @@ async def market_context():
 @app.get("/health")
 def health():
     return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+
+
+@app.get("/hunt")
+async def hunt_strong_buys(target: int = Query(default=5, description="Number of strong buys to find")):
+    """
+    Scans the full universe of ~100 stocks in batches of 10.
+    Stops as soon as it finds `target` strong buys (default 5).
+    Returns found strong buys + how many stocks were scanned.
+    """
+    target = max(1, min(target, 20))
+    found = []
+    scanned = 0
+    batch_size = 10
+
+    loop = asyncio.get_event_loop()
+
+    for i in range(0, len(HUNT_UNIVERSE), batch_size):
+        if len(found) >= target:
+            break
+        batch = HUNT_UNIVERSE[i:i + batch_size]
+        results = await asyncio.gather(
+            *[loop.run_in_executor(executor, fetch_and_analyze, t) for t in batch]
+        )
+        scanned += len(batch)
+        for r in results:
+            if r and r.get("signal") == "strong-buy":
+                found.append(r)
+                if len(found) >= target:
+                    break
+
+    found.sort(key=lambda s: s["score"], reverse=True)
+
+    return {
+        "strong_buys": found,
+        "found": len(found),
+        "target": target,
+        "scanned": scanned,
+        "universe_size": len(HUNT_UNIVERSE),
+        "complete": len(found) >= target,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "data_note": "15-min delayed intraday via Yahoo Finance",
+    }
 
 
 @app.get("/screen")
