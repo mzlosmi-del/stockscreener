@@ -6,7 +6,7 @@ Data is 15-min delayed intraday via Yahoo Finance (free, no API key needed).
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 import yfinance as yf
 import pandas_ta as ta
 import pandas as pd
