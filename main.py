@@ -39,7 +39,7 @@ print(“No signal_model.pkl found — running without ML signal”)
 except Exception as e:
 print(f”Could not load ML model: {e}”)
 
-def ml_predict(features: dict) -> float | None:
+def ml_predict(features: dict):
 “””
 Given a dict of feature values, return ML buy probability (0-1).
 Returns None if model not loaded or features incomplete.
@@ -48,7 +48,7 @@ if ML_MODEL is None or ML_FEATURES is None:
 return None
 try:
 row = [features.get(f, np.nan) for f in ML_FEATURES]
-if any(np.isnan(v) for v in row):
+if any(np.isnan(float(v)) for v in row):
 return None
 prob = float(ML_MODEL.predict_proba([row])[0][1])
 return round(prob, 3)
