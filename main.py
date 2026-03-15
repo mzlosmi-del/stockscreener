@@ -960,6 +960,35 @@ function ckWatchlist(){
   renderWatchlist();
 }
 
+function renderHuntCards(found){
+  $('hunt-cards').innerHTML=found.map(s=>`
+    <div class="hunt-card" onclick="showDetail('${s.ticker}')">
+      <div class="hunt-card-top">
+        <div>
+          <div class="hunt-card-ticker">${s.ticker} <span class="pill sb" style="font-size:12px;vertical-align:middle">Strong buy</span></div>
+          <div class="hunt-card-name">${s.name||''} &middot; ${s.sector||''}</div>
+        </div>
+        <div>
+          <div class="hunt-card-price">$${fmt(s.price)}</div>
+          <div class="hunt-card-chg ${s.change>=0?'gn':'rd'}">${fmtP(s.change)} today</div>
+        </div>
+      </div>
+      <div class="hunt-card-body">
+        <div><div class="hunt-stat-label">Signal score</div><div class="hunt-stat-value" style="color:#2d7a3a">${s.score}/10</div></div>
+        <div><div class="hunt-stat-label">RSI (14)</div><div class="hunt-stat-value" style="color:${s.rsi<35?'#2d7a3a':s.rsi>70?'#b03030':'inherit'}">${fmt(s.rsi,1)}</div></div>
+        <div><div class="hunt-stat-label">MACD</div><div class="hunt-stat-value ${s.macd_val>=0?'gn':'rd'}">${s.macd_val>=0?'+':''}${fmt(s.macd_val,2)}</div></div>
+        <div><div class="hunt-stat-label">Trend</div><div class="hunt-stat-value ${s.trend_bullish?'bt-win':'bt-loss'}">${s.trend_status||'—'}</div></div>
+      </div>
+      <div class="hunt-points">${(s.buy_points||[]).map(p=>'&#183; '+p).join('<br>')}</div>
+      <div class="hunt-risk">
+        <div><div class="hunt-stat-label">Stop loss</div><div style="font-weight:600;color:#b03030">$${fmt(s.stop)}</div></div>
+        <div><div class="hunt-stat-label">Target</div><div style="font-weight:600;color:#2d7a3a">$${fmt(s.target)}</div></div>
+        <div><div class="hunt-stat-label">Risk/reward</div><div style="font-weight:600">1:${fmt(s.risk_reward,1)}</div></div>
+      </div>
+      <div style="margin-top:10px;font-size:12px;color:#999">Click for full analysis &#8594;</div>
+    </div>`).join('');
+}
+
 async function startHunt(){
   $('hunt-idle').style.display='none';
   $('hunt-results').style.display='none';
@@ -995,39 +1024,20 @@ async function startHunt(){
       $('hunt-results').style.display='';
       const complete=data.complete;
       const sum=$('hunt-summary');
-      if(complete){
-        sum.style.cssText='background:#e8f5ea;border:.5px solid #a8d5b0;border-radius:var(--rl);color:#1a5c28';
-        sum.innerHTML='<strong>Found '+found.length+' strong buys</strong> after scanning '+data.scanned+' stocks across the US market.';
+
+      if(found.length===0){
+        sum.style.cssText='padding:12px 16px;background:#fdeaea;border:.5px solid #e8aaaa;border-radius:var(--rl);color:#7a1c1c;font-size:13px;margin-bottom:1rem';
+        sum.innerHTML='<strong>No strong buys found</strong> after scanning all '+data.scanned+' stocks. '+'The trend filter (price > SMA50 > SMA200) and signal score requirements are not met by any stock right now. '+'This is a signal in itself — the market may be in a risk-off or choppy regime. Consider waiting.';
+        $('hunt-cards').innerHTML='';
+      } else if(complete){
+        sum.style.cssText='padding:12px 16px;background:#e8f5ea;border:.5px solid #a8d5b0;border-radius:var(--rl);color:#1a5c28;font-size:13px;margin-bottom:1rem';
+        sum.innerHTML='<strong>Found all '+found.length+' strong buys</strong> after scanning '+data.scanned+' of '+data.universe_size+' stocks.';
+        renderHuntCards(found);
       } else {
-        sum.style.cssText='background:#fef9e7;border:.5px solid #e8d08a;border-radius:var(--rl);color:#7a6520';
-        sum.innerHTML='<strong>Found '+found.length+' strong buy'+(found.length!==1?'s':'')+' out of '+data.target+' target</strong> after scanning all '+data.scanned+' stocks. Market may be in risk-off mode — fewer setups available.';
+        sum.style.cssText='padding:12px 16px;background:#fef9e7;border:.5px solid #e8d08a;border-radius:var(--rl);color:#7a6520;font-size:13px;margin-bottom:1rem';
+        sum.innerHTML='<strong>Found '+found.length+' of '+data.target+' strong buys</strong> after scanning all '+data.scanned+' stocks. '+'Not enough setups pass the trend filter right now — showing what\'s available below.';
+        renderHuntCards(found);
       }
-      $('hunt-cards').innerHTML=found.map(s=>`
-        <div class="hunt-card" onclick="showDetail('${s.ticker}')">
-          <div class="hunt-card-top">
-            <div>
-              <div class="hunt-card-ticker">${s.ticker} <span class="pill sb" style="font-size:12px;vertical-align:middle">Strong buy</span></div>
-              <div class="hunt-card-name">${s.name||''} &middot; ${s.sector||''}</div>
-            </div>
-            <div>
-              <div class="hunt-card-price">$${fmt(s.price)}</div>
-              <div class="hunt-card-chg ${s.change>=0?'gn':'rd'}">${fmtP(s.change)} today</div>
-            </div>
-          </div>
-          <div class="hunt-card-body">
-            <div><div class="hunt-stat-label">Signal score</div><div class="hunt-stat-value" style="color:#2d7a3a">${s.score}/10</div></div>
-            <div><div class="hunt-stat-label">RSI (14)</div><div class="hunt-stat-value" style="color:${s.rsi<35?'#2d7a3a':s.rsi>70?'#b03030':'inherit'}">${fmt(s.rsi,1)}</div></div>
-            <div><div class="hunt-stat-label">MACD</div><div class="hunt-stat-value ${s.macd_val>=0?'gn':'rd'}">${s.macd_val>=0?'+':''}${fmt(s.macd_val,2)}</div></div>
-            <div><div class="hunt-stat-label">Volume</div><div class="hunt-stat-value">${fmt(s.vol_mult,2)}x avg</div></div>
-          </div>
-          <div class="hunt-points">${(s.buy_points||[]).map(p=>'&#183; '+p).join('<br>')}</div>
-          <div class="hunt-risk">
-            <div><div class="hunt-stat-label">Stop loss</div><div style="font-weight:600;color:#b03030">$${fmt(s.stop)}</div></div>
-            <div><div class="hunt-stat-label">Target</div><div style="font-weight:600;color:#2d7a3a">$${fmt(s.target)}</div></div>
-            <div><div class="hunt-stat-label">Risk/reward</div><div style="font-weight:600">1:${fmt(s.risk_reward,1)}</div></div>
-          </div>
-          <div style="margin-top:10px;font-size:12px;color:#999">Click for full analysis &#8594;</div>
-        </div>`).join('');
     },400);
   }catch(e){
     clearInterval(timer);
