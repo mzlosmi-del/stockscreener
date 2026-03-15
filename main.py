@@ -401,6 +401,7 @@ tr:last-child td{border-bottom:none}tbody tr{cursor:pointer;transition:backgroun
     <div class="tabs">
       <div class="tab active" id="t-screen" onclick="setTab('screen')">Screener</div>
       <div class="tab" id="t-hunt" onclick="setTab('hunt')">&#128269; Find 5 Strong Buys</div>
+      <div class="tab" id="t-check" onclick="setTab('check')">&#128270; Check Ticker</div>
       <div class="tab" id="t-watch" onclick="setTab('watch')">Watchlist</div>
     </div>
     <div id="tab-screen">
@@ -438,7 +439,50 @@ tr:last-child td{border-bottom:none}tbody tr{cursor:pointer;transition:backgroun
       </div>
       <div id="hunt-err" style="display:none"></div>
     </div>
-      <div id="we" style="text-align:center;padding:3rem;color:#999;font-size:14px">Click any stock then add to watchlist.</div>
+    <div id="tab-check" style="display:none">
+      <div style="max-width:520px;margin:0 auto;padding:1.5rem 0">
+        <div style="font-size:15px;font-weight:600;margin-bottom:6px">Check any ticker</div>
+        <div style="font-size:13px;color:#666;margin-bottom:16px">Enter any US stock symbol to run the full signal analysis against all indicators.</div>
+        <div style="display:flex;gap:8px;margin-bottom:1.5rem">
+          <input id="ticker-input" type="text" placeholder="e.g. AAPL, NVDA, SHOP..." style="flex:1;font-size:14px;padding:9px 12px;border-radius:var(--r);border:.5px solid var(--border2);background:var(--bg);color:var(--txt);text-transform:uppercase" maxlength="10" />
+          <button class="btnp" id="check-btn" onclick="checkTicker()">Analyse</button>
+        </div>
+        <div id="check-loading" style="display:none;text-align:center;padding:2rem">
+          Analysing<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>
+        </div>
+        <div id="check-err" style="display:none"></div>
+        <div id="check-result" style="display:none">
+          <div class="card">
+            <div class="ph">
+              <div><span style="font-size:15px;font-weight:600" id="ck-ticker"></span><span style="font-size:13px;color:#666;margin-left:10px" id="ck-name"></span></div>
+              <div style="display:flex;gap:8px;align-items:center"><span id="ck-pill"></span><button id="ck-wlbtn" onclick="ckWatchlist()">+ Watchlist</button></div>
+            </div>
+            <div class="pb">
+              <div class="dg">
+                <div><div class="dl">Price</div><div class="dv" id="ck-price"></div></div>
+                <div><div class="dl">1-day change</div><div class="dv" id="ck-chg"></div></div>
+                <div><div class="dl">Signal score</div><div class="dv" id="ck-score"></div></div>
+                <div><div class="dl">ATR (14)</div><div class="dv" id="ck-atr"></div></div>
+              </div>
+              <div class="dl" style="margin-top:14px;margin-bottom:4px">Indicator breakdown</div>
+              <div class="inds" id="ck-inds"></div>
+              <div class="cc"><canvas id="ck-chart"></canvas></div>
+              <div class="sbox buy"><div class="sbox-t">BUY - entry conditions</div><p id="ck-buy"></p></div>
+              <div class="sbox sell"><div class="sbox-t">SELL / exit conditions</div><p id="ck-sell"></p></div>
+              <div class="rbox">
+                <div class="dl">Risk management</div>
+                <div class="rg">
+                  <div><div class="dl">Stop loss (2x ATR)</div><div style="font-weight:600;color:#b03030" id="ck-stop"></div></div>
+                  <div><div class="dl">Target (3x ATR)</div><div style="font-weight:600;color:#2d7a3a" id="ck-tgt"></div></div>
+                  <div><div class="dl">Risk / reward</div><div style="font-weight:600" id="ck-rr"></div></div>
+                </div>
+              </div>
+              <p class="note">Live data · Yahoo Finance · 15-min delayed · Not financial advice</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
       <div id="wt"></div>
     </div>
   </div>
@@ -625,13 +669,87 @@ function renderWatchlist(){
   '</tbody></table></div>';
 }
 function setTab(name){
-  ['screen','hunt','watch'].forEach(t=>{
+  ['screen','hunt','check','watch'].forEach(t=>{
     const el=$('t-'+t);
     if(el) el.classList.toggle('active',t===name);
     const panel=$('tab-'+t);
     if(panel) panel.style.display=t===name?'':'none';
   });
   if(name==='watch')renderWatchlist();
+  if(name==='check'){
+    setTimeout(()=>{ const inp=$('ticker-input'); if(inp) inp.focus(); },100);
+  }
+}
+
+let ckChart=null;
+let ckCurTicker=null;
+
+async function checkTicker(){
+  const inp=$('ticker-input');
+  const ticker=(inp.value||'').trim().toUpperCase().replace(/[^A-Z.]/g,'');
+  if(!ticker){ inp.style.borderColor='#e8aaaa'; setTimeout(()=>inp.style.borderColor='',1200); return; }
+  inp.value=ticker;
+  $('check-loading').style.display='';
+  $('check-result').style.display='none';
+  $('check-err').style.display='none';
+  $('check-btn').disabled=true;
+  if(ckChart){ckChart.destroy();ckChart=null;}
+
+  try{
+    const res=await fetch(API+'/stock/'+encodeURIComponent(ticker));
+    if(res.status===404) throw new Error(ticker+' not found — check the symbol and try again');
+    if(!res.ok) throw new Error('Server error '+res.status);
+    const s=await res.json();
+    ckCurTicker=s.ticker;
+
+    $('ck-ticker').textContent=s.ticker;
+    $('ck-name').textContent=(s.name||'')+(s.sector?' · '+s.sector:'');
+    $('ck-pill').innerHTML='<span class="pill '+pC(s.signal)+'">'+pL(s.signal)+'</span>';
+    $('ck-price').textContent='$'+fmt(s.price);
+    $('ck-chg').innerHTML='<span class="'+(s.change>=0?'gn':'rd')+'">'+fmtP(s.change)+'</span>';
+    $('ck-score').textContent=(s.score||0)+'/10';
+    $('ck-atr').textContent='$'+fmt(s.atr);
+    $('ck-stop').textContent='$'+fmt(s.stop);
+    $('ck-tgt').textContent='$'+fmt(s.target);
+    $('ck-rr').textContent='1:'+fmt(s.risk_reward,1);
+    $('ck-wlbtn').textContent=watchlist.has(s.ticker)?'&#10003; In watchlist':'+ Watchlist';
+
+    $('ck-inds').innerHTML=[
+      {l:'RSI '+fmt(s.rsi,1),c:s.rsi<35?'bull':s.rsi>70?'bear':'neut'},
+      {l:'MACD '+(s.macd_val>=0?'+':'')+fmt(s.macd_val,2)+' '+s.macd_dir,c:s.macd_val>0?'bull':'bear'},
+      {l:'EMA20 '+(s.pct_above_ema>=0?'+':'')+fmt(s.pct_above_ema,1)+'%',c:s.pct_above_ema>0?'bull':'bear'},
+      {l:'Vol '+fmt(s.vol_mult,2)+'x',c:s.vol_mult>1.5?'bull':s.vol_mult<0.8?'bear':'neut'},
+      {l:'BB '+(s.bb_pos*100).toFixed(0)+'%',c:s.bb_pos<0.2?'bull':s.bb_pos>0.8?'bear':'neut'},
+    ].map(i=>'<span class="itag '+i.c+'">'+i.l+'</span>').join('');
+
+    $('ck-buy').innerHTML=(s.buy_points||[]).map(p=>'· '+p).join('<br>');
+    $('ck-sell').innerHTML=(s.sell_points||[]).map(p=>'· '+p).join('<br>');
+
+    const hist=s.history||[];
+    if(hist.length>1){
+      const color=s.change>=0?'#2d7a3a':'#b03030';
+      const labels=hist.map((_,i)=>i===hist.length-1?'Today':'-'+(hist.length-1-i)+'d');
+      ckChart=new Chart($('ck-chart').getContext('2d'),{type:'line',
+        data:{labels,datasets:[{data:hist,borderColor:color,backgroundColor:color+'22',borderWidth:1.5,pointRadius:0,fill:true,tension:0.3}]},
+        options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>'$'+c.raw.toFixed(2)}}},
+        scales:{x:{grid:{display:false},ticks:{font:{size:10},color:'#999',maxRotation:0}},y:{grid:{color:'#eee'},ticks:{font:{size:10},color:'#999',callback:v=>'$'+v.toFixed(0)}}}}});
+    }
+
+    $('check-loading').style.display='none';
+    $('check-result').style.display='';
+  }catch(e){
+    $('check-loading').style.display='none';
+    $('check-err').style.display='';
+    $('check-err').innerHTML='<div class="ebox">'+e.message+'</div>';
+  }
+  $('check-btn').disabled=false;
+}
+
+function ckWatchlist(){
+  if(!ckCurTicker)return;
+  watchlist.has(ckCurTicker)?watchlist.delete(ckCurTicker):watchlist.add(ckCurTicker);
+  $('ck-wlbtn').textContent=watchlist.has(ckCurTicker)?'&#10003; In watchlist':'+ Watchlist';
+  renderWatchlist();
 }
 
 async function startHunt(){
@@ -716,6 +834,7 @@ $('wlbtn').addEventListener('click',toggleWatchlist);
 $('fsig').addEventListener('change',applyFilters);
 $('fsec').addEventListener('change',applyFilters);
 $('fsort').addEventListener('change',applyFilters);
+$('ticker-input').addEventListener('keydown',e=>{ if(e.key==='Enter') checkTicker(); });
 load();
 </script>
 </body>
