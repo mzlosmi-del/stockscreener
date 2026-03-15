@@ -173,11 +173,14 @@ def fetch_and_analyze(ticker: str) -> dict:
         pct_above_sma50  = (current_price - sma50)  / sma50  * 100
         pct_above_sma200 = (current_price - sma200) / sma200 * 100
 
-        # ── Trend filter: bullish only if price > SMA50 > SMA200 ─────
-        trend_bullish = (current_price > sma50) and (sma50 > sma200)
+        # ── Trend filter: relaxed — price must be above SMA200 (primary bull/bear line)
+        # SMA50 > SMA200 is informational but no longer a hard gate
+        trend_bullish = (current_price > sma200)
+        trend_aligned = (current_price > sma50) and (sma50 > sma200)   # stronger confirmation
         trend_status  = (
-            "Strong uptrend" if trend_bullish and pct_above_sma200 > 5
-            else "Uptrend"   if trend_bullish
+            "Strong uptrend" if trend_aligned and pct_above_sma200 > 5
+            else "Uptrend"   if trend_aligned
+            else "Above 200" if trend_bullish
             else "Downtrend" if current_price < sma200
             else "Mixed"
         )
@@ -209,20 +212,24 @@ def fetch_and_analyze(ticker: str) -> dict:
         # ── 20-day price history for sparkline ───────────────────────
         history_20 = [round(float(p), 2) for p in close.iloc[-20:].tolist()]
 
-        # ── Signal score (trend filter gates the final signal) ────────
+        # ── Signal score — entry requires score >= 5 (relaxed from 6)
+        # Trend filter: only blocks buys below SMA200 (primary bear market filter)
         score  = compute_signal_score(rsi, macd_val, macd_dir, pct_above_ema, vol_mult, bb_pos, price_change)
-        # Downgrade to max "hold" if trend filter fails
-        if not trend_bullish and score >= 6:
-            score = 5
+        if not trend_bullish and score >= 5:
+            score = 4   # cap at hold, not buy, when below SMA200
         signal = signal_label(score)
 
-        # ── Position sizing: risk 1% of €10,000 account per trade ────
-        account_size  = 10000.0
-        risk_pct      = 0.01
-        risk_euros    = account_size * risk_pct          # €100
-        stop_distance = atr * 2
-        shares_sized  = risk_euros / stop_distance if stop_distance > 0 else 0
+        # ── Position sizing: risk 1% of €10,000, enforce min position ─
+        account_size   = 10000.0
+        risk_pct       = 0.01
+        risk_euros     = account_size * risk_pct          # €100
+        stop_distance  = atr * 2
+        shares_sized   = risk_euros / stop_distance if stop_distance > 0 else 0
         position_euros = shares_sized * current_price
+        # Enforce minimum €500 so Commerzbank fee (~€9.90) stays below 2% of trade
+        if position_euros < 500 and shares_sized > 0:
+            shares_sized   = 500 / current_price
+            position_euros = 500.0
         position_pct   = (position_euros / account_size) * 100
 
         stop   = current_price - atr * 2
@@ -235,7 +242,10 @@ def fetch_and_analyze(ticker: str) -> dict:
         if signal in ("strong-buy", "buy"):
             buy_points.append(f"Entry near current price ${current_price:.2f}")
             if trend_bullish:
-                buy_points.append(f"Trend filter PASSED — price above SMA50 (${sma50:.2f}) and SMA50 above SMA200 (${sma200:.2f})")
+                if trend_aligned:
+                    buy_points.append(f"Trend filter PASSED (strong) — price above SMA50 (${sma50:.2f}) and SMA50 above SMA200 (${sma200:.2f})")
+                else:
+                    buy_points.append(f"Trend filter PASSED — price above SMA200 (${sma200:.2f}), uptrend intact")
             if rsi < 45:
                 buy_points.append(f"RSI at {rsi:.1f} — oversold conditions support entry")
             if macd_val > 0 and macd_dir == "rising":
@@ -247,9 +257,11 @@ def fetch_and_analyze(ticker: str) -> dict:
             if bb_pos < 0.3:
                 buy_points.append("Price near lower Bollinger Band — mean-reversion setup")
             buy_points.append(f"Position size: {shares_sized:.2f} shares (€{position_euros:.0f} = {position_pct:.1f}% of €10k account, risking €{risk_euros:.0f})")
+            commission = commerzbank_fee(position_euros)
+            buy_points.append(f"Estimated Commerzbank fee: €{commission:.2f} (0.25% + €4.90, min €9.90) — applies on both buy and sell")
         else:
             if not trend_bullish:
-                buy_points.append(f"Trend filter FAILED — price (${current_price:.2f}) must be above SMA50 (${sma50:.2f}) and SMA50 above SMA200 (${sma200:.2f})")
+                buy_points.append(f"Trend filter FAILED — price (${current_price:.2f}) is below SMA200 (${sma200:.2f}), bearish territory")
             buy_points.append(f"Wait — RSI at {rsi:.1f}, look for drop below 40 before entering")
             buy_points.append(f"Watch for price reclaim above EMA20 (${ema20:.2f})")
             if macd_val < 0:
@@ -567,15 +579,16 @@ tr:last-child td{border-bottom:none}tbody tr{cursor:pointer;transition:backgroun
             <div style="overflow-x:auto">
               <table style="font-size:12px">
                 <thead><tr>
-                  <th style="width:8%">#</th>
-                  <th style="width:14%">Buy date</th>
-                  <th style="width:9%">Buy $</th>
-                  <th style="width:14%">Sell date</th>
-                  <th style="width:9%">Sell $</th>
-                  <th style="width:9%">Invested</th>
-                  <th style="width:10%">P&amp;L €</th>
-                  <th style="width:9%">%</th>
-                  <th style="width:18%">Exit reason</th>
+                  <th style="width:6%">#</th>
+                  <th style="width:12%">Buy date</th>
+                  <th style="width:8%">Buy $</th>
+                  <th style="width:12%">Sell date</th>
+                  <th style="width:8%">Sell $</th>
+                  <th style="width:8%">Invested</th>
+                  <th style="width:9%">Fees €</th>
+                  <th style="width:9%">P&amp;L €</th>
+                  <th style="width:8%">%</th>
+                  <th style="width:20%">Exit reason</th>
                 </tr></thead>
                 <tbody id="bt-trades"></tbody>
               </table>
@@ -823,6 +836,9 @@ async function runBacktest(){
       {l:'Max drawdown',v:'-'+Math.abs(mdd).toFixed(1)+'%',cls:'bt-loss'},
       {l:'Best trade',v:(d.best_trade_pct||0)>=0?'+':''+(d.best_trade_pct||0).toFixed(1)+'%',cls:'bt-win'},
       {l:'Worst trade',v:(d.worst_trade_pct||0).toFixed(1)+'%',cls:'bt-loss'},
+      {l:'Total fees paid',v:'€'+(d.total_fees_paid||0).toFixed(0),cls:'bt-loss'},
+      {l:'Avg fee/trade',v:'€'+(d.avg_fee_per_trade||0).toFixed(0),cls:'bt-neut'},
+      {l:'Fee drag',v:'-'+(d.fee_drag_pct||0).toFixed(1)+'%',cls:'bt-loss'},
     ].map(m=>`<div class="bt-mc"><div class="ml">${m.l}</div><div class="mv ${m.cls}">${m.v}</div></div>`).join('');
 
     // Equity curve chart
@@ -859,6 +875,7 @@ async function runBacktest(){
         <td>${t.sell_date||'Open'}</td>
         <td>${t.sell_price?'$'+parseFloat(t.sell_price).toFixed(2):'-'}</td>
         <td>€${t.invested?Math.round(t.invested):'-'}</td>
+        <td style="color:#92620a">€${t.total_fees?t.total_fees.toFixed(0):'-'}</td>
         <td class="${t.pnl>=0?'bt-win':'bt-loss'}" style="font-weight:600">${t.pnl>=0?'+':''}€${Math.abs(t.pnl).toFixed(0)}</td>
         <td class="${t.pnl_pct>=0?'bt-win':'bt-loss'}">${t.pnl_pct>=0?'+':''}${parseFloat(t.pnl_pct).toFixed(1)}%</td>
         <td style="font-size:11px;color:#999">${t.exit_reason||'-'}</td>
@@ -1248,14 +1265,248 @@ async def single_stock(ticker: str):
     return result
 
 
+def commerzbank_fee(trade_value: float) -> float:
+    """
+    Commerzbank DirectDepot order fee (shares/ETFs):
+    0.25% of trade value + €4.90 flat fee, minimum €9.90.
+    Source: commerzbank.expats.de/depot-en/ (2025)
+    """
+    fee = trade_value * 0.0025 + 4.90
+    return max(fee, 9.90)
+
+
 def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
     """
     Replay signal logic on historical daily OHLCV.
-    Now includes:
+    Includes:
     - Trend filter: only buy when price > SMA50 > SMA200
     - Volatility position sizing: risk 1% of portfolio per trade (position = risk / ATR*2)
+    - Commerzbank transaction costs: 0.25% + €4.90, min €9.90 per trade
     - Exits: stop loss, target hit, score <= 3, or trend filter breaks
     """
+    try:
+        tk = yf.Ticker(ticker)
+        fetch_period = "max" if period == "5y" else period
+        hist = tk.history(period=fetch_period, interval="1d", auto_adjust=True)
+        if hist.empty or len(hist) < 220:
+            return None
+
+        close  = hist["Close"].astype(float)
+        high   = hist["High"].astype(float)
+        low    = hist["Low"].astype(float)
+        volume = hist["Volume"].astype(float)
+        dates  = hist.index
+
+        period_bars = {"1y": 252, "2y": 504, "5y": 1260}
+        max_bars = period_bars.get(period, 252)
+        start_i = max(210, len(close) - max_bars)
+
+        rsi_s   = ta.rsi(close, length=14)
+        macd_df = ta.macd(close, fast=12, slow=26, signal=9)
+        ema20_s = ta.ema(close, length=20)
+        bb_df   = ta.bbands(close, length=20, std=2)
+        atr_s   = ta.atr(high, low, close, length=14)
+
+        hist_col  = [c for c in macd_df.columns if "MACDh" in c] if macd_df is not None else []
+        lower_col = [c for c in bb_df.columns if "BBL" in c] if bb_df is not None else []
+        upper_col = [c for c in bb_df.columns if "BBU" in c] if bb_df is not None else []
+
+        trades          = []
+        portfolio       = float(trade_size)
+        cash            = float(trade_size)
+        initial         = float(trade_size)
+        risk_pct        = 0.01
+        position        = None
+        equity_curve    = []
+        total_fees_paid = 0.0
+        buy_hold_start  = float(close.iloc[start_i])
+
+        for i in range(start_i, len(close)):
+            price  = float(close.iloc[i])
+            date_s = str(dates[i].date())
+
+            def safe(s, default=50.0):
+                v = s.iloc[i] if s is not None else None
+                return float(v) if v is not None and not pd.isna(v) else default
+
+            rsi      = safe(rsi_s, 50.0)
+            macd_val = float(macd_df[hist_col[0]].iloc[i])   if hist_col and not pd.isna(macd_df[hist_col[0]].iloc[i])   else 0.0
+            prev_mac = float(macd_df[hist_col[0]].iloc[i-1]) if hist_col and not pd.isna(macd_df[hist_col[0]].iloc[i-1]) else macd_val
+            macd_dir = "rising" if macd_val > prev_mac else "falling"
+            ema20    = safe(ema20_s, price)
+            atr      = safe(atr_s, price * 0.015)
+
+            bb_lower = float(bb_df[lower_col[0]].iloc[i]) if lower_col and not pd.isna(bb_df[lower_col[0]].iloc[i]) else price * 0.95
+            bb_upper = float(bb_df[upper_col[0]].iloc[i]) if upper_col and not pd.isna(bb_df[upper_col[0]].iloc[i]) else price * 1.05
+            bb_range = bb_upper - bb_lower
+            bb_pos   = (price - bb_lower) / bb_range if bb_range > 0 else 0.5
+
+            sma50  = float(close.iloc[max(0, i-50):i+1].mean())
+            sma200 = float(close.iloc[max(0, i-200):i+1].mean())
+            trend_ok = (price > sma50) and (sma50 > sma200)
+
+            pct_above_ema = (price - ema20) / ema20 * 100
+            prev_price    = float(close.iloc[i - 1]) if i > 0 else price
+            price_change  = (price - prev_price) / prev_price * 100
+            vol_window    = volume.iloc[max(0, i - 20):i]
+            vol_avg       = float(vol_window.mean()) if len(vol_window) > 0 else float(volume.iloc[i])
+            vol_mult      = float(volume.iloc[i]) / vol_avg if vol_avg > 0 else 1.0
+
+            score = compute_signal_score(rsi, macd_val, macd_dir, pct_above_ema, vol_mult, bb_pos, price_change)
+            if not trend_ok and score >= 6:
+                score = 5
+
+            # ── Exit logic ────────────────────────────────────────────
+            if position is not None:
+                exit_reason = exit_price = None
+                if price <= position["stop"]:
+                    exit_reason, exit_price = "Stop loss", position["stop"]
+                elif price >= position["target"]:
+                    exit_reason, exit_price = "Target hit", position["target"]
+                elif score <= 3:
+                    exit_reason, exit_price = "Signal weak", price
+                elif not trend_ok:
+                    exit_reason, exit_price = "Trend broke", price
+
+                if exit_reason:
+                    gross_proceeds = position["shares"] * exit_price
+                    sell_fee       = commerzbank_fee(gross_proceeds)
+                    net_proceeds   = gross_proceeds - sell_fee
+                    total_fees_paid += sell_fee
+                    # P&L = net proceeds - total invested (buy cost_basis already net of buy fee)
+                    pnl     = net_proceeds - position["cost_basis"]
+                    pnl_pct = (exit_price - position["buy_price"]) / position["buy_price"] * 100
+                    cash   += net_proceeds
+                    portfolio = cash
+                    trades.append({
+                        "buy_date":    position["buy_date"],
+                        "buy_price":   round(position["buy_price"], 2),
+                        "sell_date":   date_s,
+                        "sell_price":  round(exit_price, 2),
+                        "shares":      round(position["shares"], 4),
+                        "invested":    round(position["cost_basis"], 2),
+                        "buy_fee":     round(position["buy_fee"], 2),
+                        "sell_fee":    round(sell_fee, 2),
+                        "total_fees":  round(position["buy_fee"] + sell_fee, 2),
+                        "pnl":         round(pnl, 2),
+                        "pnl_pct":     round(pnl_pct, 2),
+                        "exit_reason": exit_reason,
+                    })
+                    position = None
+
+            # ── Entry logic with volatility sizing + Commerzbank fee ──
+            if position is None and score >= 5 and trend_ok:
+                risk_amount   = portfolio * risk_pct
+                stop_distance = atr * 2
+                shares        = risk_amount / stop_distance if stop_distance > 0 else 0
+                gross_cost    = shares * price
+                # Enforce minimum €500 so fees stay below 2% of trade value
+                if 0 < gross_cost < 500:
+                    shares     = 500 / price
+                    gross_cost = 500.0
+                buy_fee    = commerzbank_fee(gross_cost)
+                total_cost = gross_cost + buy_fee
+                if shares > 0 and total_cost <= cash:
+                    cash           -= total_cost
+                    total_fees_paid += buy_fee
+                    position = {
+                        "shares":     shares,
+                        "buy_price":  price,
+                        "cost_basis": total_cost,
+                        "buy_fee":    buy_fee,
+                        "stop":       price - atr * 2,
+                        "target":     price + atr * 3,
+                        "buy_date":   date_s,
+                    }
+
+            portfolio_val = cash + (position["shares"] * price if position else 0)
+            buy_hold_val  = initial * (price / buy_hold_start)
+            equity_curve.append({
+                "date":     date_s,
+                "value":    round(portfolio_val, 2),
+                "buy_hold": round(buy_hold_val, 2),
+            })
+            if position is None:
+                portfolio = portfolio_val
+
+        # Close open position at last price
+        if position is not None:
+            lp             = float(close.iloc[-1])
+            gross_proceeds = position["shares"] * lp
+            sell_fee       = commerzbank_fee(gross_proceeds)
+            net_proceeds   = gross_proceeds - sell_fee
+            total_fees_paid += sell_fee
+            pnl     = net_proceeds - position["cost_basis"]
+            pnl_pct = (lp - position["buy_price"]) / position["buy_price"] * 100
+            trades.append({
+                "buy_date":    position["buy_date"],
+                "buy_price":   round(position["buy_price"], 2),
+                "sell_date":   "Open",
+                "sell_price":  None,
+                "shares":      round(position["shares"], 4),
+                "invested":    round(position["cost_basis"], 2),
+                "buy_fee":     round(position["buy_fee"], 2),
+                "sell_fee":    round(sell_fee, 2),
+                "total_fees":  round(position["buy_fee"] + sell_fee, 2),
+                "pnl":         round(pnl, 2),
+                "pnl_pct":     round(pnl_pct, 2),
+                "exit_reason": "Still open",
+            })
+
+        final_value    = equity_curve[-1]["value"] if equity_curve else initial
+        total_pnl      = final_value - initial
+        total_trades   = len(trades)
+        winning_trades = sum(1 for t in trades if t["pnl"] > 0)
+        pnl_pcts       = [t["pnl_pct"] for t in trades]
+
+        peak = initial
+        max_dd = 0.0
+        for pt in equity_curve:
+            peak = max(peak, pt["value"])
+            dd   = (peak - pt["value"]) / peak * 100 if peak > 0 else 0
+            max_dd = max(max_dd, dd)
+
+        step    = max(1, len(equity_curve) // 300)
+        eq_thin = equity_curve[::step]
+        if equity_curve and equity_curve[-1] != eq_thin[-1]:
+            eq_thin.append(equity_curve[-1])
+
+        avg_fee = total_fees_paid / (total_trades * 2) if total_trades else 0
+
+        return {
+            "ticker":              ticker,
+            "period":              period,
+            "trade_size":          trade_size,
+            "initial_value":       round(initial, 2),
+            "final_value":         round(final_value, 2),
+            "total_pnl":           round(total_pnl, 2),
+            "total_return_pct":    round((total_pnl / initial) * 100, 2),
+            "total_trades":        total_trades,
+            "winning_trades":      winning_trades,
+            "losing_trades":       total_trades - winning_trades,
+            "win_rate_pct":        round(winning_trades / total_trades * 100, 1) if total_trades else 0,
+            "best_trade_pct":      round(max(pnl_pcts), 2) if pnl_pcts else 0,
+            "worst_trade_pct":     round(min(pnl_pcts), 2) if pnl_pcts else 0,
+            "max_drawdown_pct":    round(max_dd, 2),
+            "total_fees_paid":     round(total_fees_paid, 2),
+            "avg_fee_per_trade":   round(avg_fee, 2),
+            "fee_drag_pct":        round((total_fees_paid / initial) * 100, 2),
+            "trades":              trades,
+            "equity_curve":        eq_thin,
+            "strategy_notes": [
+                "Trend filter: only buys when price > SMA200 (primary bull/bear line)",
+                "Entry threshold: signal score ≥ 5 (buy or strong-buy)",
+                "Position sizing: risks 1% of portfolio per trade (ATR-based), minimum €500 per trade",
+                "Transaction costs: Commerzbank 0.25% + €4.90 per trade, min €9.90 (applied on buy and sell)",
+                "Exit triggers: stop loss (2x ATR), target (3x ATR), very weak signal (score ≤2), price drops below SMA200",
+            ],
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    except Exception:
+        print(f"Backtest error {ticker}: {traceback.format_exc()}")
+        return None
+
     try:
         tk = yf.Ticker(ticker)
         # Need extra history for SMA200 warmup — fetch max available for long periods
@@ -1318,8 +1569,8 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
             sma50  = float(close.iloc[max(0, i-50):i+1].mean())
             sma200 = float(close.iloc[max(0, i-200):i+1].mean())
 
-            # Trend filter
-            trend_ok = (price > sma50) and (sma50 > sma200)
+            # Trend filter — relaxed: price must be above SMA200 only
+            trend_ok = (price > sma200)
 
             pct_above_ema = (price - ema20) / ema20 * 100
             prev_price    = float(close.iloc[i - 1]) if i > 0 else price
@@ -1329,9 +1580,9 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
             vol_mult      = float(volume.iloc[i]) / vol_avg if vol_avg > 0 else 1.0
 
             score = compute_signal_score(rsi, macd_val, macd_dir, pct_above_ema, vol_mult, bb_pos, price_change)
-            # Trend filter gates the buy signal
-            if not trend_ok and score >= 6:
-                score = 5
+            # Cap at hold when below SMA200
+            if not trend_ok and score >= 5:
+                score = 4
 
             # ── Exit logic ────────────────────────────────────────────
             if position is not None:
@@ -1340,7 +1591,7 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
                     exit_reason, exit_price = "Stop loss", position["stop"]
                 elif price >= position["target"]:
                     exit_reason, exit_price = "Target hit", position["target"]
-                elif score <= 3:
+                elif score <= 2:                          # raised from 3 — less hair-trigger
                     exit_reason, exit_price = "Signal weak", price
                 elif not trend_ok:
                     exit_reason, exit_price = "Trend broke", price
