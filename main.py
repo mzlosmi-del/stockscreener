@@ -362,6 +362,10 @@ tr:last-child td{border-bottom:none}tbody tr{cursor:pointer;transition:backgroun
 .hunt-stat-value{font-size:14px;font-weight:600}
 .hunt-points{font-size:13px;line-height:1.65;color:var(--txt2);margin-bottom:12px}
 .hunt-risk{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;background:var(--bg2);border-radius:var(--r);padding:10px 12px;font-size:12px}
+.bt-mc{background:var(--bg);border-radius:var(--r);padding:11px 13px;border:.5px solid var(--border)}
+.bt-mc .ml{font-size:10px;color:var(--txt3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px}
+.bt-mc .mv{font-size:18px;font-weight:700}
+.bt-win{color:#2d7a3a}.bt-loss{color:#b03030}.bt-neut{color:var(--txt)}
 </style>
 </head>
 <body>
@@ -402,6 +406,7 @@ tr:last-child td{border-bottom:none}tbody tr{cursor:pointer;transition:backgroun
       <div class="tab active" id="t-screen" onclick="setTab('screen')">Screener</div>
       <div class="tab" id="t-hunt" onclick="setTab('hunt')">&#128269; Find 5 Strong Buys</div>
       <div class="tab" id="t-check" onclick="setTab('check')">&#128270; Check Ticker</div>
+      <div class="tab" id="t-backtest" onclick="setTab('backtest')">&#9654; Backtest</div>
       <div class="tab" id="t-watch" onclick="setTab('watch')">Watchlist</div>
     </div>
     <div id="tab-screen">
@@ -480,6 +485,65 @@ tr:last-child td{border-bottom:none}tbody tr{cursor:pointer;transition:backgroun
               <p class="note">Live data · Yahoo Finance · 15-min delayed · Not financial advice</p>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+    <div id="tab-backtest" style="display:none">
+      <div style="max-width:600px;margin:0 auto;padding:1.5rem 0">
+        <div style="font-size:15px;font-weight:600;margin-bottom:6px">Backtest a strategy</div>
+        <div style="font-size:13px;color:#666;margin-bottom:16px">Simulates &euro;1,000 trades using the same buy/sell signals the tool generates. Buy when score &ge;6, sell when score drops to &le;3 or stop/target is hit.</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:1rem;align-items:flex-end">
+          <div style="flex:1;min-width:120px">
+            <div class="dl" style="margin-bottom:4px">Ticker</div>
+            <input id="bt-ticker" type="text" placeholder="e.g. AAPL" style="width:100%;font-size:14px;padding:9px 12px;border-radius:var(--r);border:.5px solid var(--border2);background:var(--bg);color:var(--txt);text-transform:uppercase" maxlength="10" />
+          </div>
+          <div style="width:130px">
+            <div class="dl" style="margin-bottom:4px">Period</div>
+            <select id="bt-period" style="width:100%">
+              <option value="1y">1 year</option>
+              <option value="2y">2 years</option>
+              <option value="5y">5 years</option>
+            </select>
+          </div>
+          <div style="width:130px">
+            <div class="dl" style="margin-bottom:4px">Trade size</div>
+            <select id="bt-size" style="width:100%">
+              <option value="1000">€1,000</option>
+              <option value="5000">€5,000</option>
+              <option value="10000">€10,000</option>
+            </select>
+          </div>
+          <button class="btnp" id="bt-btn" onclick="runBacktest()">&#9654; Run</button>
+        </div>
+        <div id="bt-loading" style="display:none;text-align:center;padding:2rem;color:#666">
+          Running backtest<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>
+        </div>
+        <div id="bt-err" style="display:none"></div>
+        <div id="bt-results" style="display:none">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-bottom:1.25rem" id="bt-metrics"></div>
+          <div class="card" style="padding:16px;margin-bottom:1rem">
+            <div style="font-size:12px;color:#999;margin-bottom:8px">Equity curve &mdash; starting &euro;<span id="bt-start-val"></span></div>
+            <div style="position:relative;height:220px"><canvas id="bt-equity-chart"></canvas></div>
+          </div>
+          <div class="card" style="overflow:hidden;margin-bottom:1rem">
+            <div style="background:var(--bg2);padding:10px 14px;font-size:12px;font-weight:600;border-bottom:.5px solid var(--border)">Trade log</div>
+            <div style="overflow-x:auto">
+              <table style="font-size:12px">
+                <thead><tr>
+                  <th style="width:10%">#</th>
+                  <th style="width:16%">Buy date</th>
+                  <th style="width:10%">Buy $</th>
+                  <th style="width:16%">Sell date</th>
+                  <th style="width:10%">Sell $</th>
+                  <th style="width:10%">Shares</th>
+                  <th style="width:12%">P&amp;L &euro;</th>
+                  <th style="width:16%">Exit reason</th>
+                </tr></thead>
+                <tbody id="bt-trades"></tbody>
+              </table>
+            </div>
+          </div>
+          <p class="note">Backtest uses adjusted close prices. Slippage and commissions not included. Past performance does not guarantee future results.</p>
         </div>
       </div>
     </div>
@@ -669,17 +733,105 @@ function renderWatchlist(){
   '</tbody></table></div>';
 }
 function setTab(name){
-  ['screen','hunt','check','watch'].forEach(t=>{
+  ['screen','hunt','check','backtest','watch'].forEach(t=>{
     const el=$('t-'+t);
     if(el) el.classList.toggle('active',t===name);
     const panel=$('tab-'+t);
     if(panel) panel.style.display=t===name?'':'none';
   });
   if(name==='watch')renderWatchlist();
-  if(name==='check'){
-    setTimeout(()=>{ const inp=$('ticker-input'); if(inp) inp.focus(); },100);
-  }
+  if(name==='check') setTimeout(()=>{ const i=$('ticker-input'); if(i) i.focus(); },100);
+  if(name==='backtest') setTimeout(()=>{ const i=$('bt-ticker'); if(i) i.focus(); },100);
 }
+
+let btChart=null;
+
+async function runBacktest(){
+  const ticker=($('bt-ticker').value||'').trim().toUpperCase().replace(/[^A-Z.]/g,'');
+  if(!ticker){ $('bt-ticker').style.borderColor='#e8aaaa'; setTimeout(()=>$('bt-ticker').style.borderColor='',1200); return; }
+  $('bt-ticker').value=ticker;
+  const period=$('bt-period').value;
+  const size=parseInt($('bt-size').value);
+  $('bt-loading').style.display='';
+  $('bt-results').style.display='none';
+  $('bt-err').style.display='none';
+  $('bt-btn').disabled=true;
+  if(btChart){btChart.destroy();btChart=null;}
+
+  try{
+    const res=await fetch(API+'/backtest/'+encodeURIComponent(ticker)+'?period='+period+'&trade_size='+size);
+    if(res.status===404) throw new Error(ticker+' not found');
+    if(!res.ok) throw new Error('Server error '+res.status);
+    const d=await res.json();
+
+    $('bt-start-val').textContent=size.toLocaleString();
+    const pnl=d.total_pnl||0;
+    const pct=d.total_return_pct||0;
+    const wins=d.winning_trades||0;
+    const total=d.total_trades||0;
+    const winrate=total>0?((wins/total)*100).toFixed(0):0;
+    const mdd=d.max_drawdown_pct||0;
+    const final=d.final_value||size;
+
+    $('bt-metrics').innerHTML=[
+      {l:'Final value',v:'€'+final.toLocaleString('de-DE',{minimumFractionDigits:0,maximumFractionDigits:0}),cls:final>=size?'bt-win':'bt-loss'},
+      {l:'Total P&L',v:(pnl>=0?'+':'')+'€'+Math.abs(pnl).toFixed(0),cls:pnl>=0?'bt-win':'bt-loss'},
+      {l:'Total return',v:(pct>=0?'+':'')+pct.toFixed(1)+'%',cls:pct>=0?'bt-win':'bt-loss'},
+      {l:'Trades',v:total,cls:'bt-neut'},
+      {l:'Win rate',v:winrate+'%',cls:parseFloat(winrate)>=50?'bt-win':'bt-loss'},
+      {l:'Max drawdown',v:'-'+Math.abs(mdd).toFixed(1)+'%',cls:'bt-loss'},
+      {l:'Best trade',v:(d.best_trade_pct||0)>=0?'+':''+(d.best_trade_pct||0).toFixed(1)+'%',cls:'bt-win'},
+      {l:'Worst trade',v:(d.worst_trade_pct||0).toFixed(1)+'%',cls:'bt-loss'},
+    ].map(m=>`<div class="bt-mc"><div class="ml">${m.l}</div><div class="mv ${m.cls}">${m.v}</div></div>`).join('');
+
+    // Equity curve chart
+    const eq=d.equity_curve||[];
+    if(eq.length>1){
+      const labels=eq.map(p=>p.date);
+      const values=eq.map(p=>p.value);
+      const color=final>=size?'#2d7a3a':'#b03030';
+      btChart=new Chart($('bt-equity-chart').getContext('2d'),{
+        type:'line',
+        data:{labels,datasets:[
+          {data:values,borderColor:color,backgroundColor:color+'18',borderWidth:2,pointRadius:0,fill:true,tension:0.3,label:'Portfolio'},
+          {data:eq.map(p=>p.buy_hold),borderColor:'#888',borderWidth:1,borderDash:[4,4],pointRadius:0,fill:false,tension:0.3,label:'Buy & hold'},
+        ]},
+        options:{responsive:true,maintainAspectRatio:false,
+          plugins:{legend:{display:true,position:'top',labels:{font:{size:11},boxWidth:12}},
+            tooltip:{callbacks:{label:c=>'€'+c.raw.toFixed(0)}}},
+          scales:{
+            x:{grid:{display:false},ticks:{font:{size:10},color:'#999',maxTicksLimit:8,maxRotation:0}},
+            y:{grid:{color:'#eee'},ticks:{font:{size:10},color:'#999',callback:v=>'€'+v.toFixed(0)}}
+          }
+        }
+      });
+    }
+
+    // Trade log
+    const trades=d.trades||[];
+    $('bt-trades').innerHTML=trades.length===0
+      ?'<tr><td colspan="8" style="text-align:center;padding:1.5rem;color:#999">No trades generated in this period</td></tr>'
+      :trades.map((t,i)=>`<tr>
+        <td>${i+1}</td>
+        <td>${t.buy_date}</td>
+        <td>$${parseFloat(t.buy_price).toFixed(2)}</td>
+        <td>${t.sell_date||'Open'}</td>
+        <td>${t.sell_price?'$'+parseFloat(t.sell_price).toFixed(2):'-'}</td>
+        <td>${t.shares}</td>
+        <td class="${t.pnl>=0?'bt-win':'bt-loss'}" style="font-weight:600">${t.pnl>=0?'+':''}€${Math.abs(t.pnl).toFixed(0)}</td>
+        <td style="font-size:11px;color:#999">${t.exit_reason||'-'}</td>
+      </tr>`).join('');
+
+    $('bt-loading').style.display='none';
+    $('bt-results').style.display='';
+  }catch(e){
+    $('bt-loading').style.display='none';
+    $('bt-err').style.display='';
+    $('bt-err').innerHTML='<div class="ebox">'+e.message+'</div>';
+  }
+  $('bt-btn').disabled=false;
+}
+
 
 let ckChart=null;
 let ckCurTicker=null;
@@ -835,6 +987,7 @@ $('fsig').addEventListener('change',applyFilters);
 $('fsec').addEventListener('change',applyFilters);
 $('fsort').addEventListener('change',applyFilters);
 $('ticker-input').addEventListener('keydown',e=>{ if(e.key==='Enter') checkTicker(); });
+$('bt-ticker').addEventListener('keydown',e=>{ if(e.key==='Enter') runBacktest(); });
 load();
 </script>
 </body>
@@ -1027,3 +1180,191 @@ async def single_stock(ticker: str):
     if result is None:
         raise HTTPException(status_code=404, detail=f"Could not fetch data for {ticker}")
     return result
+
+
+def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
+    """
+    Replay signal logic on historical daily OHLCV.
+    Buy when score >= 6. Sell when score <= 3, stop hit, or target hit.
+    One position at a time. Fixed trade_size euros per trade.
+    """
+    try:
+        tk = yf.Ticker(ticker)
+        hist = tk.history(period=period, interval="1d", auto_adjust=True)
+        if hist.empty or len(hist) < 60:
+            return None
+
+        close  = hist["Close"].astype(float)
+        high   = hist["High"].astype(float)
+        low    = hist["Low"].astype(float)
+        volume = hist["Volume"].astype(float)
+        dates  = hist.index
+
+        rsi_s   = ta.rsi(close, length=14)
+        macd_df = ta.macd(close, fast=12, slow=26, signal=9)
+        ema20_s = ta.ema(close, length=20)
+        bb_df   = ta.bbands(close, length=20, std=2)
+        atr_s   = ta.atr(high, low, close, length=14)
+
+        hist_col  = [c for c in macd_df.columns if "MACDh" in c] if macd_df is not None else []
+        lower_col = [c for c in bb_df.columns if "BBL" in c] if bb_df is not None else []
+        upper_col = [c for c in bb_df.columns if "BBU" in c] if bb_df is not None else []
+
+        trades        = []
+        cash          = trade_size
+        initial       = trade_size
+        position      = None
+        equity_curve  = []
+        buy_hold_start = float(close.iloc[60])
+
+        for i in range(60, len(close)):
+            price  = float(close.iloc[i])
+            date_s = str(dates[i].date())
+
+            def safe(s, default=50.0):
+                v = s.iloc[i] if s is not None else None
+                return float(v) if v is not None and not pd.isna(v) else default
+
+            rsi      = safe(rsi_s, 50.0)
+            macd_val = float(macd_df[hist_col[0]].iloc[i]) if hist_col and not pd.isna(macd_df[hist_col[0]].iloc[i]) else 0.0
+            prev_mac = float(macd_df[hist_col[0]].iloc[i-1]) if hist_col and not pd.isna(macd_df[hist_col[0]].iloc[i-1]) else macd_val
+            macd_dir = "rising" if macd_val > prev_mac else "falling"
+            ema20    = safe(ema20_s, price)
+            atr      = safe(atr_s, price * 0.015)
+
+            bb_lower = float(bb_df[lower_col[0]].iloc[i]) if lower_col and not pd.isna(bb_df[lower_col[0]].iloc[i]) else price * 0.95
+            bb_upper = float(bb_df[upper_col[0]].iloc[i]) if upper_col and not pd.isna(bb_df[upper_col[0]].iloc[i]) else price * 1.05
+            bb_range = bb_upper - bb_lower
+            bb_pos   = (price - bb_lower) / bb_range if bb_range > 0 else 0.5
+
+            pct_above_ema = (price - ema20) / ema20 * 100
+            prev_price    = float(close.iloc[i - 1]) if i > 0 else price
+            price_change  = (price - prev_price) / prev_price * 100
+            vol_window    = volume.iloc[max(0, i - 20):i]
+            vol_avg       = float(vol_window.mean()) if len(vol_window) > 0 else float(volume.iloc[i])
+            vol_mult      = float(volume.iloc[i]) / vol_avg if vol_avg > 0 else 1.0
+
+            score = compute_signal_score(rsi, macd_val, macd_dir, pct_above_ema, vol_mult, bb_pos, price_change)
+
+            # Exit logic
+            if position is not None:
+                exit_reason = exit_price = None
+                if price <= position["stop"]:
+                    exit_reason, exit_price = "Stop loss", position["stop"]
+                elif price >= position["target"]:
+                    exit_reason, exit_price = "Target hit", position["target"]
+                elif score <= 3:
+                    exit_reason, exit_price = "Signal weak", price
+
+                if exit_reason:
+                    proceeds = position["shares"] * exit_price
+                    pnl      = proceeds - trade_size
+                    pnl_pct  = (exit_price - position["buy_price"]) / position["buy_price"] * 100
+                    cash    += proceeds
+                    trades.append({
+                        "buy_date":    position["buy_date"],
+                        "buy_price":   round(position["buy_price"], 2),
+                        "sell_date":   date_s,
+                        "sell_price":  round(exit_price, 2),
+                        "shares":      round(position["shares"], 4),
+                        "pnl":         round(pnl, 2),
+                        "pnl_pct":     round(pnl_pct, 2),
+                        "exit_reason": exit_reason,
+                    })
+                    position = None
+
+            # Entry logic
+            if position is None and score >= 6 and cash >= trade_size * 0.5:
+                shares    = trade_size / price
+                cash     -= trade_size
+                position  = {
+                    "shares":    shares,
+                    "buy_price": price,
+                    "stop":      price - atr * 2,
+                    "target":    price + atr * 3,
+                    "buy_date":  date_s,
+                }
+
+            portfolio_val = cash + (position["shares"] * price if position else 0)
+            buy_hold_val  = initial * (price / buy_hold_start)
+            equity_curve.append({"date": date_s, "value": round(portfolio_val, 2), "buy_hold": round(buy_hold_val, 2)})
+
+        # Close open position at last price
+        if position is not None:
+            lp       = float(close.iloc[-1])
+            proceeds = position["shares"] * lp
+            pnl      = proceeds - trade_size
+            pnl_pct  = (lp - position["buy_price"]) / position["buy_price"] * 100
+            trades.append({
+                "buy_date":    position["buy_date"],
+                "buy_price":   round(position["buy_price"], 2),
+                "sell_date":   "Open",
+                "sell_price":  None,
+                "shares":      round(position["shares"], 4),
+                "pnl":         round(pnl, 2),
+                "pnl_pct":     round(pnl_pct, 2),
+                "exit_reason": "Still open",
+            })
+            cash += proceeds
+
+        total_trades   = len(trades)
+        winning_trades = sum(1 for t in trades if t["pnl"] > 0)
+        total_pnl      = sum(t["pnl"] for t in trades)
+        final_value    = initial + total_pnl
+        pnl_pcts       = [t["pnl_pct"] for t in trades]
+
+        peak = initial
+        max_dd = 0.0
+        for pt in equity_curve:
+            peak = max(peak, pt["value"])
+            dd   = (peak - pt["value"]) / peak * 100 if peak > 0 else 0
+            max_dd = max(max_dd, dd)
+
+        step = max(1, len(equity_curve) // 300)
+        eq_thin = equity_curve[::step]
+        if equity_curve and equity_curve[-1] != eq_thin[-1]:
+            eq_thin.append(equity_curve[-1])
+
+        return {
+            "ticker":           ticker,
+            "period":           period,
+            "trade_size":       trade_size,
+            "initial_value":    round(initial, 2),
+            "final_value":      round(final_value, 2),
+            "total_pnl":        round(total_pnl, 2),
+            "total_return_pct": round((total_pnl / initial) * 100, 2),
+            "total_trades":     total_trades,
+            "winning_trades":   winning_trades,
+            "losing_trades":    total_trades - winning_trades,
+            "win_rate_pct":     round(winning_trades / total_trades * 100, 1) if total_trades else 0,
+            "best_trade_pct":   round(max(pnl_pcts), 2) if pnl_pcts else 0,
+            "worst_trade_pct":  round(min(pnl_pcts), 2) if pnl_pcts else 0,
+            "max_drawdown_pct": round(max_dd, 2),
+            "trades":           trades,
+            "equity_curve":     eq_thin,
+            "generated_at":     datetime.now(timezone.utc).isoformat(),
+        }
+
+    except Exception:
+        print(f"Backtest error {ticker}: {traceback.format_exc()}")
+        return None
+
+
+@app.get("/backtest/{ticker}")
+async def backtest(
+    ticker: str,
+    period: str = Query(default="1y"),
+    trade_size: float = Query(default=1000.0),
+):
+    """Backtest signal strategy. Example: GET /backtest/AAPL?period=2y&trade_size=1000"""
+    if period not in {"1y", "2y", "5y"}:
+        raise HTTPException(status_code=400, detail="Period must be 1y, 2y, or 5y")
+    if trade_size < 100 or trade_size > 100000:
+        raise HTTPException(status_code=400, detail="Trade size must be 100–100,000")
+    result = await asyncio.get_event_loop().run_in_executor(
+        executor, run_backtest, ticker.upper(), period, trade_size
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Could not backtest {ticker}")
+    return result
+
