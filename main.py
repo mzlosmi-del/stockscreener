@@ -519,16 +519,6 @@ def fetch_and_analyze(ticker: str) -> dict:
                 f"👁 WATCH — ROC60 {roc60:.1f}% (base technical condition met). "
                 f"{ps_str} — need P/S >15.8 for Rule A confirmation. "
                 f"Add to watchlist.")
-        if rule1:
-            buy_points.append(
-                f"RULE 1 FIRED (55% win rate vs SPY): "
-                f"MACD positive + RSI {rsi:.1f} oversold — "
-                f"historically +14.5% alpha over SPY in 20 days")
-        if ml_prob is not None and ml_prob >= 0.55:
-            buy_points.append(
-                f"ML MODEL CONFIDENT: {ml_prob*100:.0f}% probability of "
-                f"outperforming SPY — highest precision tier (73.7% historical win rate)")
-
         if signal in ("strong-buy", "buy"):
             buy_points.append(f"Entry near current price ${current_price:.2f}")
             if trend_bullish:
@@ -556,21 +546,21 @@ def fetch_and_analyze(ticker: str) -> dict:
                 f"Commerzbank fee: €{commission:.2f} per leg "
                 f"(€{commission*2:.2f} round trip)")
         else:
-            if not rule1 and not rule2:
-                buy_points.append("Neither data-proven rule is firing right now")
+            any_rule = rule_a or rule_b or rule_c or rule_d or rule_watch
+            if not any_rule:
+                buy_points.append("No data-proven rule is firing right now")
             if not trend_bullish:
                 buy_points.append(
                     f"Price below SMA200 (${sma200:.2f}) — "
                     f"wait for trend to recover")
-            if rsi >= 35:
-                buy_points.append(
-                    f"RSI {rsi:.1f} — wait for RSI < 35 for Rule 1 to fire")
             if roc60 >= -22:
                 buy_points.append(
                     f"60-day return {roc60:.1f}% — "
-                    f"wait for deeper pullback (<-22%) for Rule 2")
-            if macd_val <= 0:
-                buy_points.append("MACD negative — wait for histogram to turn positive")
+                    f"wait for deeper pullback (<-22%) for Rule A")
+            ps_str2 = f"P/S {ps_ratio:.1f}x (need >15.8)" if ps_ratio else "P/S data unavailable"
+            if roc60 < -22 and (ps_ratio is None or ps_ratio <= 15.8):
+                buy_points.append(
+                    f"Technical condition met (ROC60 {roc60:.1f}%) but {ps_str2}")
 
         sell_points.append(
             f"Stop loss: ${stop:.2f} (2x ATR) — hard exit, no exceptions")
