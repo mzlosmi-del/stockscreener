@@ -75,28 +75,69 @@ DEFAULT_TICKERS = [
 ]
 
 # Extended universe for the Rule 2 hunter — mid-caps outside S&P 500
-# where technical patterns are less efficiently priced
+# Global universe for Rule 2 scanning — mid-caps outside S&P 500 where
+# technical patterns are less efficiently priced, plus international ADRs
 _HUNT_RAW = [
-    # Technology mid-caps
+    # ── US Technology mid-caps ────────────────────────────────────────────────
     "PCTY","QLYS","CIEN","GLOB","NCNO","EXLS","KFRC","PAYO","PRFT",
-    # Consumer / retail mid-caps
+    "JAMF","ALKT","DOCN","MAPS","YEXT","BIGC","SEMR","SPSC","FOUR",
+    "RELY","TASK","FLYW","BRZE","CFLT","DDOG","GTLB","HUBS","ZS",
+    "BILL","ESTC","FROG","SMAR","TOST","WEAV","ZI",
+
+    # ── US Consumer / retail mid-caps ─────────────────────────────────────────
     "CROX","BOOT","CAVA","SHAK","PLAY","BJ","FIVE","OLLI","PRGO","CATO",
-    # Healthcare mid-caps
+    "BIRD","CURV","ELF","GOOS","LULU","OXM","PLCE","RGS","SCVL","TLYS",
+    "CENT","CENTA","CHEF","FBRT","HAYW","LESL","PATK","POOL","SBH","XPOF",
+
+    # ── US Healthcare mid-caps ────────────────────────────────────────────────
     "ENSG","ACAD","ITCI","AMED","NHC","PAHC","RGEN","NUVL","RXST","PRAX",
-    # Industrials mid-caps
+    "ACLS","ADUS","ALHC","AMEH","ANIP","ARVN","ASTH","AVTR","AXSM","BDTX",
+    "CASH","CHRD","CRVS","DXCM","GKOS","HALO","INVA","IRMD","JNCE","KIDS",
+
+    # ── US Industrials / materials mid-caps ───────────────────────────────────
     "ASTE","ITRI","KTOS","MYRG","ROAD","WMS","GVA","USLM","UFPI",
-    # Financial mid-caps
+    "AEIS","AOUT","ARCB","ARLO","ATRI","BFAM","BLBD","BMI","CECO","CEIX",
+    "CENT","CLH","CMCO","CNXC","CVEO","DFIN","DY","ENVA","FCFS","FWRD",
+
+    # ── US Financial mid-caps ─────────────────────────────────────────────────
     "CSWC","GBCI","HOMB","TOWN","CVBF","SFNC","WSFS","NBTB","FFIN",
-    # Energy mid-caps
+    "ABCB","ACNB","AROW","BANF","BANR","BHLB","BKU","BMTC","BSVN","BUSE",
+    "CADE","CALB","CARE","CBAN","CBSH","CBTX","CCBG","CFB","CFFI","CFFN",
+
+    # ── US Energy mid-caps ────────────────────────────────────────────────────
     "CIVI","MTDR","CHRD","VTLE","DINO","DKL",
-    # REITs mid-caps
-    "IIPR","NTST","APLE","SVC","ROIC","SITC","PLYM","NXRT",
-    # International ADRs
-    "VALE","ERJ","PAGS","MELI","TIMB","DESP","BRFS",
-    # Large caps as fallback (Rule 2 occasionally fires here too)
+    "AM","AMPY","ARCH","AROC","BATL","CEIX","CEL","CHNR","CLR","CTRA",
+    "DKL","DNOW","DRQ","FLNG","GPRE","HESM","HPKV","HTZ","KALU","KNTK",
+
+    # ── US REITs ─────────────────────────────────────────────────────────────
+    "IIPR","NTST","APLE","SVC","ROIC","SITC","PLYM","NXRT","GMRE","PSTL",
+    "ALEX","ALPS","AMH","AOMR","APAM","BRSP","BRT","CLDT","CLNC","COLD",
+
+    # ── European ADRs (US-listed) ─────────────────────────────────────────────
+    "ASML","SAP","SHOP","NVO","AZN","GSK","BP","SHEL","RIO","BBL",
+    "UL","BTI","PHG","ING","ABB","ERIC","NOK","ST","SSYS","FLEX",
+    "PSTG","WPM","AGI","KGC","OR","PAAS","MAG","AEM","FNV","GOLD",
+
+    # ── LatAm ADRs ───────────────────────────────────────────────────────────
+    "VALE","ERJ","PAGS","MELI","TIMB","DESP","BRFS","GGAL","SUPV","LPSN",
+    "BSBR","ITUB","BBD","SBS","CIG","CBD","GGB","PBR","SID","VTMX",
+
+    # ── Asia Pacific ADRs ─────────────────────────────────────────────────────
+    "TSM","BABA","JD","PDD","BIDU","NIO","LI","XPEV","NTES","WB",
+    "BILI","CANG","CIFS","CX","DADA","DOYU","EDU","FINV","GOTU","HTHT",
+    "IQ","JOYY","KC","LAIX","LFC","LKNCY","MOMO","NOAH","RERE","RLX",
+    "SE","TIGR","TME","TUYA","VNET","WDH","WIMI","XD","YMM","ZH",
+
+    # ── India ADRs ───────────────────────────────────────────────────────────
+    "INFY","WIT","HDB","IBN","SIFY","VEDL","TTM","MMYT","INDA","INDY",
+
+    # ── Africa / Middle East ADRs ─────────────────────────────────────────────
+    "GOLD","HL","SA","SLW","TRQ","BTG","DRD","HMY","SBSW","ANGPY",
+
+    # ── Large caps as fallback ────────────────────────────────────────────────
     "NVDA","AAPL","MSFT","META","GOOGL","AMZN","TSLA","AMD",
     "JPM","BAC","JNJ","XOM","HD","PG","CVX","MRK",
-    "NFLX","DIS","CAT","GE","BA","UPS",
+    "NFLX","DIS","CAT","GE","BA","UPS","ADBE","CRM",
 ]
 _seen = set()
 HUNT_UNIVERSE = [x for x in _HUNT_RAW if not (x in _seen or _seen.add(x))]
@@ -639,6 +680,7 @@ tr:last-child td{border-bottom:none}tbody tr{cursor:pointer;transition:backgroun
     <div class="tabs">
       <div class="tab active" id="t-screen" onclick="setTab('screen')">Screener</div>
       <div class="tab" id="t-hunt" onclick="setTab('hunt')">&#128269; Find Rule 2 Setup</div>
+      <div class="tab" id="t-global" onclick="setTab('global')">&#127758; Global Rule 2 Scan</div>
       <div class="tab" id="t-check" onclick="setTab('check')">&#128270; Check Ticker</div>
       <div class="tab" id="t-backtest" onclick="setTab('backtest')">&#9654; Backtest</div>
       <div class="tab" id="t-watch" onclick="setTab('watch')">Watchlist</div>
@@ -681,6 +723,53 @@ tr:last-child td{border-bottom:none}tbody tr{cursor:pointer;transition:backgroun
         </div>
       </div>
       <div id="hunt-err" style="display:none"></div>
+    </div>
+    </div>
+    <div id="tab-global" style="display:none">
+      <div id="global-idle" style="text-align:center;padding:2.5rem 1rem">
+        <div style="font-size:32px;margin-bottom:12px">&#127758;</div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:8px">Global Rule 2 Scanner</div>
+        <div style="font-size:13px;color:#666;margin-bottom:8px;max-width:500px;margin-left:auto;margin-right:auto">
+          Scans <strong>300+ stocks globally</strong> — US mid-caps, European ADRs, LatAm, Asia Pacific — for Rule 2 setups.<br><br>
+          <strong>Rule 2:</strong> Price above SMA200 + 60-day return &lt; -22% + far from 52-week high<br>
+          <span style="color:#2d7a3a;font-weight:600">72% outperform SPY by 1%+</span> over 20 days · avg alpha +12.4%<br><br>
+          Also shows any Rule 1 signals found (MACD positive + RSI &lt; 35, 55% win rate).
+        </div>
+        <div style="font-size:12px;color:#999;margin-bottom:16px">Takes ~60 seconds to scan the full universe</div>
+        <button class="btnp" onclick="startGlobalScan()">&#127758; Start Global Scan</button>
+      </div>
+      <div id="global-loading" style="display:none;text-align:center;padding:2.5rem 1rem">
+        <div style="font-size:13px;color:#666;margin-bottom:12px">Scanning global universe<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>
+        <div id="global-progress" style="font-size:22px;font-weight:600;color:#2d7a3a;margin-bottom:4px">Scanning...</div>
+        <div id="global-sub" style="font-size:12px;color:#999">Fetching data in parallel batches of 20</div>
+        <div style="width:260px;height:4px;background:rgba(0,0,0,0.1);border-radius:2px;margin:12px auto 0">
+          <div id="global-bar" style="height:4px;background:#2d7a3a;border-radius:2px;width:5%;transition:width 2s"></div>
+        </div>
+      </div>
+      <div id="global-results" style="display:none">
+        <div id="global-summary" style="margin-bottom:1rem"></div>
+        <div id="global-r2-section" style="display:none">
+          <div style="font-size:14px;font-weight:600;color:#1a5c28;margin-bottom:10px;padding:8px 12px;background:#e8f5ea;border-radius:var(--r);border:.5px solid #a8d5b0">
+            &#9989; Rule 2 signals — <span id="global-r2-count">0</span> found · 72% win rate vs SPY · avg +12.4% alpha
+          </div>
+          <div id="global-r2-cards"></div>
+        </div>
+        <div id="global-r1-section" style="display:none;margin-top:1.5rem">
+          <div style="font-size:14px;font-weight:600;color:#7a6520;margin-bottom:10px;padding:8px 12px;background:#fef9e7;border-radius:var(--r);border:.5px solid #e8d08a">
+            &#128308; Rule 1 signals — <span id="global-r1-count">0</span> found · 55% win rate vs SPY · avg +14.5% alpha
+          </div>
+          <div id="global-r1-cards"></div>
+        </div>
+        <div id="global-none" style="display:none;text-align:center;padding:2rem;color:#666;font-size:13px">
+          No Rule 2 or Rule 1 signals found in today's scan.<br>
+          This is normal — these are high-precision signals that fire infrequently.<br>
+          Try again tomorrow or after a market pullback.
+        </div>
+        <div style="text-align:center;margin-top:1.5rem">
+          <button class="btnp" onclick="startGlobalScan()">&#127758; Scan Again</button>
+        </div>
+      </div>
+      <div id="global-err" style="display:none"></div>
     </div>
     <div id="tab-check" style="display:none">
       <div style="max-width:520px;margin:0 auto;padding:1.5rem 0">
@@ -1011,7 +1100,7 @@ function renderWatchlist(){
   '</tbody></table></div>';
 }
 function setTab(name){
-  ['screen','hunt','check','backtest','watch'].forEach(t=>{
+  ['screen','hunt','global','check','backtest','watch'].forEach(t=>{
     const el=$('t-'+t);
     if(el) el.classList.toggle('active',t===name);
     const panel=$('tab-'+t);
@@ -1020,6 +1109,105 @@ function setTab(name){
   if(name==='watch')renderWatchlist();
   if(name==='check') setTimeout(()=>{ const i=$('ticker-input'); if(i) i.focus(); },100);
   if(name==='backtest') setTimeout(()=>{ const i=$('bt-ticker'); if(i) i.focus(); },100);
+}
+
+async function startGlobalScan(){
+  $('global-idle').style.display='none';
+  $('global-results').style.display='none';
+  $('global-err').style.display='none';
+  $('global-loading').style.display='';
+  $('global-progress').textContent='Scanning 300+ stocks...';
+  $('global-sub').textContent='Fetching data in parallel batches of 20';
+
+  // Animate progress bar
+  let pct=5;
+  const barInterval=setInterval(()=>{
+    pct=Math.min(pct+2,90);
+    $('global-bar').style.width=pct+'%';
+  },1500);
+
+  try{
+    const res=await fetch(API+'/hunt-rule2?max_scan=300');
+    clearInterval(barInterval);
+    $('global-bar').style.width='100%';
+
+    if(!res.ok) throw new Error('Scan failed: '+res.status);
+    const d=await res.json();
+
+    $('global-loading').style.display='none';
+    $('global-results').style.display='';
+
+    // Summary bar
+    $('global-summary').innerHTML=
+      '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:1rem">'+
+      '<div class="bt-mc"><div class="ml">Scanned</div><div class="mv">'+d.scanned+'</div></div>'+
+      '<div class="bt-mc"><div class="ml">Rule 2 hits</div><div class="mv" style="color:'+(d.rule2_count>0?'#2d7a3a':'#666')+'">'+d.rule2_count+'</div></div>'+
+      '<div class="bt-mc"><div class="ml">Rule 1 hits</div><div class="mv" style="color:'+(d.rule1_count>0?'#b07020':'#666')+'">'+d.rule1_count+'</div></div>'+
+      '<div class="bt-mc"><div class="ml">Universe</div><div class="mv">'+d.universe_size+'</div></div>'+
+      '</div>';
+
+    const makeCard=(s,ruleLabel,cardColor)=>{
+      const chgColor=s.change>=0?'#2d7a3a':'#b03030';
+      return '<div class="hunt-card" style="border-left:3px solid '+cardColor+'">'+
+        '<div class="hunt-card-top">'+
+          '<div><div class="hunt-card-ticker">'+s.ticker+
+            (ruleLabel?'<span style="font-size:11px;font-weight:400;background:'+cardColor+';color:#fff;padding:2px 7px;border-radius:10px;margin-left:8px">'+ruleLabel+'</span>':'')+
+          '</div>'+
+          '<div class="hunt-card-name">'+s.name+'</div></div>'+
+          '<div><div class="hunt-card-price">$'+fmt(s.price,2)+'</div>'+
+          '<div class="hunt-card-chg" style="color:'+chgColor+'">'+(s.change>=0?'+':'')+fmt(s.change,2)+'%</div></div>'+
+        '</div>'+
+        '<div class="hunt-card-body">'+
+          '<div><div class="hunt-stat-label">RSI(14)</div><div class="hunt-stat-value" style="color:'+(s.rsi<35?'#2d7a3a':s.rsi>70?'#b03030':'inherit')+'">'+fmt(s.rsi,1)+'</div></div>'+
+          '<div><div class="hunt-stat-label">ROC 60d</div><div class="hunt-stat-value" style="color:'+(s.roc60<-22?'#2d7a3a':'inherit')+'">'+fmt(s.roc60,1)+'%</div></div>'+
+          '<div><div class="hunt-stat-label">vs SMA200</div><div class="hunt-stat-value" style="color:'+(s.pct_above_sma200>=0?'#2d7a3a':'#b03030')+'">'+fmt(s.pct_above_sma200,1)+'%</div></div>'+
+          '<div><div class="hunt-stat-label">From 52w high</div><div class="hunt-stat-value">'+fmt(s.pct_52w_high,1)+'%</div></div>'+
+          '<div><div class="hunt-stat-label">MACD</div><div class="hunt-stat-value" style="color:'+(s.macd_val>0?'#2d7a3a':'#b03030')+'">'+(s.macd_val>=0?'+':'')+fmt(s.macd_val,3)+'</div></div>'+
+          '<div><div class="hunt-stat-label">ATR</div><div class="hunt-stat-value">$'+fmt(s.atr,2)+'</div></div>'+
+        '</div>'+
+        '<div style="display:flex;gap:6px;flex-wrap:wrap;font-size:11px;margin-bottom:10px">'+
+          s.buy_points.slice(0,3).map(p=>'<span style="color:#555">· '+p+'</span>').join('')+
+        '</div>'+
+        '<div class="hunt-risk">'+
+          '<div><div class="hunt-stat-label">Entry</div><div style="font-weight:600">$'+fmt(s.price,2)+'</div></div>'+
+          '<div><div class="hunt-stat-label">Stop</div><div style="font-weight:600;color:#b03030">$'+fmt(s.stop,2)+'</div></div>'+
+          '<div><div class="hunt-stat-label">Target</div><div style="font-weight:600;color:#2d7a3a">$'+fmt(s.target,2)+'</div></div>'+
+        '</div>'+
+      '</div>';
+    };
+
+    // Rule 2 section
+    if(d.rule2_count>0){
+      $('global-r2-count').textContent=d.rule2_count;
+      $('global-r2-section').style.display='';
+      $('global-r2-cards').innerHTML=d.rule2_hits.map(s=>makeCard(s,'Rule 2','#2d7a3a')).join('');
+    } else {
+      $('global-r2-section').style.display='none';
+    }
+
+    // Rule 1 section
+    if(d.rule1_count>0){
+      $('global-r1-count').textContent=d.rule1_count;
+      $('global-r1-section').style.display='';
+      $('global-r1-cards').innerHTML=d.rule1_hits.map(s=>makeCard(s,'Rule 1','#b07020')).join('');
+    } else {
+      $('global-r1-section').style.display='none';
+    }
+
+    // Neither found
+    if(d.rule2_count===0 && d.rule1_count===0){
+      $('global-none').style.display='';
+    } else {
+      $('global-none').style.display='none';
+    }
+
+  }catch(e){
+    clearInterval(barInterval);
+    $('global-loading').style.display='none';
+    $('global-err').style.display='';
+    $('global-err').innerHTML='<div class="ebox">'+e.message+'</div>';
+    $('global-idle').style.display='';
+  }
 }
 
 let btChart=null;
@@ -1479,6 +1667,57 @@ async def hunt_strong_buys(target: int = Query(default=1, description="Number of
         "complete":      len(found) >= target,
         "generated_at":  datetime.now(timezone.utc).isoformat(),
         "data_note":     "15-min delayed intraday via Yahoo Finance",
+    }
+
+
+@app.get("/hunt-rule2")
+async def hunt_rule2(max_scan: int = Query(default=300, description="Max stocks to scan")):
+    """
+    Scans the entire global universe for Rule 2 signals:
+    price > SMA200 AND ROC(60) < -22% AND pct from 52w high < -3.82%
+    This is the highest-precision signal: 72% win rate vs SPY, avg +12.4% alpha.
+    Scans in parallel batches of 20, returns ALL matches found.
+    """
+    max_scan  = min(max_scan, len(HUNT_UNIVERSE))
+    universe  = HUNT_UNIVERSE[:max_scan]
+    batch_size= 20
+    rule2_hits = []
+    rule1_hits = []
+    scanned   = 0
+    failed    = 0
+    loop      = asyncio.get_event_loop()
+
+    for i in range(0, len(universe), batch_size):
+        batch   = universe[i:i + batch_size]
+        results = await asyncio.gather(
+            *[loop.run_in_executor(executor, fetch_and_analyze, t) for t in batch]
+        )
+        scanned += len(batch)
+        for r in results:
+            if r is None:
+                failed += 1
+                continue
+            if r.get("rule2_fired"):
+                rule2_hits.append(r)
+            elif r.get("rule1_fired"):
+                rule1_hits.append(r)
+
+    # Sort Rule 2 hits by how deeply oversold they are (most negative ROC60 first)
+    rule2_hits.sort(key=lambda s: s.get("roc60", 0))
+    # Sort Rule 1 hits by RSI ascending (most oversold first)
+    rule1_hits.sort(key=lambda s: s.get("rsi", 99))
+
+    return {
+        "rule2_hits":    rule2_hits,
+        "rule1_hits":    rule1_hits,
+        "rule2_count":   len(rule2_hits),
+        "rule1_count":   len(rule1_hits),
+        "scanned":       scanned,
+        "failed":        failed,
+        "universe_size": len(universe),
+        "generated_at":  datetime.now(timezone.utc).isoformat(),
+        "rule2_desc":    "Above SMA200 + 60-day return < -22% + >3.82% from 52w high — 72% win rate vs SPY",
+        "rule1_desc":    "MACD positive + RSI(14) < 35 — 55% win rate vs SPY, avg +14.5% alpha",
     }
 
 
