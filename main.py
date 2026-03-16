@@ -712,32 +712,61 @@ tr:last-child td{border-bottom:none}tbody tr{cursor:pointer;transition:backgroun
       </div>
     </div>
     <div id="tab-backtest" style="display:none">
-      <div style="max-width:600px;margin:0 auto;padding:1.5rem 0">
-        <div style="font-size:15px;font-weight:600;margin-bottom:6px">Backtest a strategy</div>
-        <div style="font-size:13px;color:#666;margin-bottom:16px">Simulates &euro;1,000 trades using the same buy/sell signals the tool generates. Buy when score &ge;6, sell when score drops to &le;3 or stop/target is hit.</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:1rem;align-items:flex-end">
-          <div style="flex:1;min-width:120px">
+      <div style="max-width:660px;margin:0 auto;padding:1.5rem 0">
+        <div style="font-size:15px;font-weight:600;margin-bottom:4px">Backtest a strategy</div>
+        <div style="font-size:13px;color:#666;margin-bottom:14px">Simulates trading using the data-proven rules. Entry fires on Rule 1 (MACD+ &amp; RSI&lt;35) and/or Rule 2 (above SMA200 + deep pullback). Commerzbank fees applied on every trade.</div>
+
+        <div style="background:#fef9e7;border:.5px solid #e8d08a;border-radius:var(--rl);padding:12px 14px;margin-bottom:14px;font-size:12px;color:#7a6520">
+          <strong>Fee warning:</strong> Commerzbank charges min €9.90 per trade (€19.80 round trip). On a €1,000 account with 45 trades that is €891 in fees — more than your capital. Use at least €5,000 account size, or €10,000 for realistic results.
+        </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:flex-end">
+          <div style="flex:1;min-width:100px">
             <div class="dl" style="margin-bottom:4px">Ticker</div>
-            <input id="bt-ticker" type="text" placeholder="e.g. AAPL" style="width:100%;font-size:14px;padding:9px 12px;border-radius:var(--r);border:.5px solid var(--border2);background:var(--bg);color:var(--txt);text-transform:uppercase" maxlength="10" />
+            <input id="bt-ticker" type="text" placeholder="e.g. SHOP" style="width:100%;font-size:14px;padding:9px 12px;border-radius:var(--r);border:.5px solid var(--border2);background:var(--bg);color:var(--txt);text-transform:uppercase" maxlength="10" />
           </div>
-          <div style="width:130px">
+          <div style="width:110px">
             <div class="dl" style="margin-bottom:4px">Period</div>
             <select id="bt-period" style="width:100%">
               <option value="1y">1 year</option>
               <option value="2y">2 years</option>
-              <option value="5y">5 years</option>
+              <option value="5y" selected>5 years</option>
             </select>
           </div>
           <div style="width:130px">
-            <div class="dl" style="margin-bottom:4px">Trade size</div>
+            <div class="dl" style="margin-bottom:4px">Account size</div>
             <select id="bt-size" style="width:100%">
               <option value="1000">€1,000</option>
               <option value="5000">€5,000</option>
-              <option value="10000">€10,000</option>
+              <option value="10000" selected>€10,000</option>
+              <option value="25000">€25,000</option>
+              <option value="50000">€50,000</option>
+            </select>
+          </div>
+          <div style="width:130px">
+            <div class="dl" style="margin-bottom:4px">Min position</div>
+            <select id="bt-minpos" style="width:100%">
+              <option value="500">€500</option>
+              <option value="1000">€1,000</option>
+              <option value="2000" selected>€2,000</option>
+              <option value="5000">€5,000</option>
             </select>
           </div>
           <button class="btnp" id="bt-btn" onclick="runBacktest()">&#9654; Run</button>
         </div>
+
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:1rem;align-items:flex-end">
+          <div style="flex:1">
+            <div class="dl" style="margin-bottom:4px">Entry mode</div>
+            <select id="bt-mode" style="width:100%">
+              <option value="both">Rule 1 + Rule 2 (more trades)</option>
+              <option value="rule2only">Rule 2 only — highest precision (72% win rate vs SPY)</option>
+              <option value="rule1only">Rule 1 only — MACD+ &amp; RSI&lt;35 (55% win rate vs SPY)</option>
+              <option value="score">Legacy score ≥5 only</option>
+            </select>
+          </div>
+        </div>
+
         <div id="bt-loading" style="display:none;text-align:center;padding:2rem;color:#666">
           Running backtest<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span>
         </div>
@@ -986,6 +1015,8 @@ async function runBacktest(){
   $('bt-ticker').value=ticker;
   const period=$('bt-period').value;
   const size=parseInt($('bt-size').value);
+  const minpos=parseInt($('bt-minpos').value);
+  const mode=$('bt-mode').value;
   $('bt-loading').style.display='';
   $('bt-results').style.display='none';
   $('bt-err').style.display='none';
@@ -993,7 +1024,7 @@ async function runBacktest(){
   if(btChart){btChart.destroy();btChart=null;}
 
   try{
-    const res=await fetch(API+'/backtest/'+encodeURIComponent(ticker)+'?period='+period+'&trade_size='+size);
+    const res=await fetch(API+'/backtest/'+encodeURIComponent(ticker)+'?period='+period+'&trade_size='+size+'&min_position='+minpos+'&entry_mode='+mode);
     if(res.status===404) throw new Error(ticker+' not found');
     if(!res.ok) throw new Error('Server error '+res.status);
     const d=await res.json();
@@ -1461,7 +1492,8 @@ def commerzbank_fee(trade_value: float) -> float:
     return max(fee, 9.90)
 
 
-def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
+def run_backtest(ticker: str, period: str, trade_size: float,
+                 min_position: float = 2000.0, entry_mode: str = "both") -> dict:
     """
     Replay signal logic on historical daily OHLCV.
     Includes:
@@ -1590,24 +1622,25 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
                     })
                     position = None
 
-            # ── Entry: data-proven rules + legacy score ───────────────
-            # Rule 1 (MACD+ AND RSI<35) fires regardless of trend — it's a
-            # mean-reversion signal that works even below SMA200
-            # Rule 2 and score require price > SMA200
-            entry_signal = (
-                rule1_bt or                           # 55% win rate vs SPY
-                (rule2_bt and trend_ok) or            # 72% win rate vs SPY
-                (score >= 5 and trend_ok)             # legacy fallback
-            )
+            # ── Entry: controlled by entry_mode parameter ─────────────
+            if entry_mode == "rule1only":
+                entry_signal = rule1_bt
+            elif entry_mode == "rule2only":
+                entry_signal = rule2_bt
+            elif entry_mode == "score":
+                entry_signal = (score >= 5 and trend_ok)
+            else:  # "both" — all signals
+                entry_signal = rule1_bt or (rule2_bt and trend_ok) or (score >= 5 and trend_ok)
+
             if position is None and entry_signal:
                 risk_amount   = portfolio * risk_pct
                 stop_distance = atr * 2
                 shares        = risk_amount / stop_distance if stop_distance > 0 else 0
                 gross_cost    = shares * price
-                # Enforce minimum €500 so fees stay below 2% of trade value
-                if 0 < gross_cost < 500:
-                    shares     = 500 / price
-                    gross_cost = 500.0
+                # Enforce minimum position so fees stay proportionate
+                if 0 < gross_cost < min_position:
+                    shares     = min_position / price
+                    gross_cost = min_position
                 buy_fee    = commerzbank_fee(gross_cost)
                 total_cost = gross_cost + buy_fee
                 if shares > 0 and total_cost <= cash:
@@ -1619,9 +1652,9 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
                         "cost_basis": total_cost,
                         "buy_fee":    buy_fee,
                         "stop":       price - atr * 2,
-                        "target":     price + atr * 4,    # R:R = 1:2
+                        "target":     price + atr * 4,
                         "buy_date":   date_s,
-                        "entry_bar":  i,                  # for minimum hold tracking
+                        "entry_bar":  i,
                     }
 
             portfolio_val = cash + (position["shares"] * price if position else 0)
@@ -1720,15 +1753,19 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
 async def backtest(
     ticker: str,
     period: str = Query(default="1y"),
-    trade_size: float = Query(default=1000.0),
+    trade_size: float = Query(default=10000.0),
+    min_position: float = Query(default=2000.0),
+    entry_mode: str = Query(default="both"),
 ):
-    """Backtest signal strategy. Example: GET /backtest/AAPL?period=2y&trade_size=1000"""
+    """Backtest signal strategy. Example: GET /backtest/AAPL?period=2y&trade_size=10000"""
     if period not in {"1y", "2y", "5y"}:
         raise HTTPException(status_code=400, detail="Period must be 1y, 2y, or 5y")
-    if trade_size < 100 or trade_size > 100000:
-        raise HTTPException(status_code=400, detail="Trade size must be 100–100,000")
+    if trade_size < 100 or trade_size > 500000:
+        raise HTTPException(status_code=400, detail="Trade size must be 100–500,000")
+    if entry_mode not in {"both", "rule1only", "rule2only", "score"}:
+        raise HTTPException(status_code=400, detail="Invalid entry_mode")
     result = await asyncio.get_event_loop().run_in_executor(
-        executor, run_backtest, ticker.upper(), period, trade_size
+        executor, run_backtest, ticker.upper(), period, trade_size, min_position, entry_mode
     )
     if result is None:
         raise HTTPException(status_code=404, detail=f"Could not backtest {ticker}")
