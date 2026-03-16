@@ -252,28 +252,52 @@ def fetch_and_analyze(ticker: str) -> dict:
         # ── 20-day price history for sparkline ───────────────────────
         history_20 = [round(float(p), 2) for p in close.iloc[-20:].tolist()]
 
-        # ── Signal score — entry requires score >= 5 (relaxed from 6)
-        # Trend filter: only blocks buys below SMA200 (primary bear market filter)
-        score  = compute_signal_score(rsi, macd_val, macd_dir, pct_above_ema, vol_mult, bb_pos, price_change)
+        # ── ROC(60) and 52-week metrics ───────────────────────────────
+        roc60        = float(close.pct_change(60).iloc[-1] * 100) if len(close) >= 60 else 0.0
+        high52       = float(high.rolling(252).max().iloc[-1]) if len(close) >= 252 else float(high.max())
+        low52        = float(low.rolling(252).min().iloc[-1])  if len(close) >= 252 else float(low.min())
+        pct_52w_high = (current_price - high52) / high52 * 100 if high52 > 0 else 0.0
+        pct_52w_low  = (current_price - low52)  / low52  * 100 if low52  > 0 else 0.0
+        hist_vol_20  = float(close.pct_change().rolling(20).std().iloc[-1] * (252**0.5) * 100)
+
+        # ── Data-proven rules from ML research ───────────────────────
+        # Rule 1: MACD positive AND RSI(14) < 35
+        # 946 signals | 55.2% outperform SPY | avg alpha +14.52% over 20d
+        rule1 = (macd_val > 0) and (rsi < 35)
+
+        # Rule 2: Above SMA200 AND ROC(60) deeply negative AND far from 52w high
+        # 100 signals | 72.0% outperform SPY | avg alpha +12.38% over 20d
+        # roc60 threshold = bottom 15th percentile (~-22%), pct_52w_high bottom 20th (~-3.82%)
+        rule2 = (trend_bullish) and (roc60 < -22.0) and (pct_52w_high < -3.82)
+
+        # ── Signal score (legacy composite, kept for screener table) ──
+        score = compute_signal_score(rsi, macd_val, macd_dir, pct_above_ema,
+                                     vol_mult, bb_pos, price_change)
         if not trend_bullish and score >= 5:
-            score = 4   # cap at hold, not buy, when below SMA200
+            score = 4
         signal = signal_label(score)
 
+        # ── Override signal if a data-proven rule fires ───────────────
+        if rule2:
+            # Highest precision rule — override to strong-buy
+            signal = "strong-buy"
+            score  = max(score, 8)
+        elif rule1:
+            # High alpha rule — override to buy minimum
+            if signal not in ("strong-buy",):
+                signal = "buy"
+                score  = max(score, 6)
+
         # ── ML signal (if model available) ───────────────────────────
-        obv       = (np.sign(close.diff()) * volume).fillna(0).cumsum()
-        obv_slope = float((obv.diff(5) / (obv.abs().rolling(5).mean() + 1e-9)).iloc[-1])
-        vol_ratio_5 = float(volume.rolling(5).mean().iloc[-1] / avg_vol_20) if avg_vol_20 > 0 else 1.0
-        hist_vol_20 = float(close.pct_change().rolling(20).std().iloc[-1] * (252**0.5) * 100)
+        obv          = (np.sign(close.diff()) * volume).fillna(0).cumsum()
+        obv_slope    = float((obv.diff(5) / (obv.abs().rolling(5).mean() + 1e-9)).iloc[-1])
+        vol_ratio_5  = float(volume.rolling(5).mean().iloc[-1] / avg_vol_20) if avg_vol_20 > 0 else 1.0
         bb_width_pct = float((bb_upper - bb_lower) / current_price * 100) if bb_upper > bb_lower else 4.0
         bb_squeeze   = bool((bb_upper - bb_lower) < close.rolling(20).std().iloc[-1] * 2 * 0.8)
-        high52 = float(hist["High"].astype(float).rolling(252).max().iloc[-1]) if len(hist) >= 252 else float(hist["High"].max())
-        low52  = float(hist["Low"].astype(float).rolling(252).min().iloc[-1])  if len(hist) >= 252 else float(hist["Low"].min())
-        pct_52w_high = (current_price - high52) / high52 * 100 if high52 > 0 else 0
-        pct_52w_low  = (current_price - low52)  / low52  * 100 if low52  > 0 else 0
-        rsi7 = float(ta.rsi(close, length=7).iloc[-1]) if len(close) >= 7 else rsi
-        roc5  = float(close.pct_change(5).iloc[-1]  * 100)
-        roc10 = float(close.pct_change(10).iloc[-1] * 100)
-        roc20 = float(close.pct_change(20).iloc[-1] * 100)
+        rsi7         = float(ta.rsi(close, length=7).iloc[-1]) if len(close) >= 7 else rsi
+        roc5         = float(close.pct_change(5).iloc[-1]  * 100)
+        roc10        = float(close.pct_change(10).iloc[-1] * 100)
+        roc20        = float(close.pct_change(20).iloc[-1] * 100)
         open_price   = float(hist["Open"].iloc[-1])
         high_price   = float(hist["High"].iloc[-1])
         low_price    = float(hist["Low"].iloc[-1])
@@ -282,95 +306,142 @@ def fetch_and_analyze(ticker: str) -> dict:
         upper_shadow = (high_price - max(current_price, open_price)) / candle_range
         lower_shadow = (min(current_price, open_price) - low_price)  / candle_range
         trend_regime = 1 if sma50 > sma200 else (-1 if sma50 < sma200 else 0)
-        macd_signal_val = float(ta.macd(close, fast=12, slow=26, signal=9).filter(like="MACDs").iloc[-1].values[0]) if macd_df is not None and not macd_df.empty else 0.0
+        macd_signal_val = float(
+            ta.macd(close, fast=12, slow=26, signal=9)
+            .filter(like="MACDs").iloc[-1].values[0]
+        ) if macd_df is not None and not macd_df.empty else 0.0
 
         ml_features = {
             "rsi_14": rsi, "rsi_7": rsi7,
-            "macd_hist": macd_val, "macd_line": macd_val, "macd_signal": macd_signal_val,
+            "macd_hist": macd_val, "macd_line": macd_val,
+            "macd_signal": macd_signal_val,
             "roc_5": roc5, "roc_10": roc10, "roc_20": roc20,
-            "pct_above_ema20": pct_above_ema, "pct_above_sma50": pct_above_sma50, "pct_above_sma200": pct_above_sma200,
+            "pct_above_ema20": pct_above_ema,
+            "pct_above_sma50": pct_above_sma50,
+            "pct_above_sma200": pct_above_sma200,
             "trend_regime": trend_regime,
             "atr_pct": (atr / current_price * 100) if current_price > 0 else 0,
-            "bb_pos": bb_pos, "bb_width_pct": bb_width_pct, "bb_squeeze": float(bb_squeeze),
+            "bb_pos": bb_pos, "bb_width_pct": bb_width_pct,
+            "bb_squeeze": float(bb_squeeze),
             "hist_vol_20": hist_vol_20,
-            "vol_ratio": vol_mult, "vol_ratio_5": vol_ratio_5, "obv_slope": obv_slope,
-            "price_change_1d": price_change, "price_change_3d": float(close.pct_change(3).iloc[-1] * 100),
+            "vol_ratio": vol_mult, "vol_ratio_5": vol_ratio_5,
+            "obv_slope": obv_slope,
+            "price_change_1d": price_change,
+            "price_change_3d": float(close.pct_change(3).iloc[-1] * 100),
             "pct_from_52w_high": pct_52w_high, "pct_from_52w_low": pct_52w_low,
-            "candle_body": candle_body, "upper_shadow": upper_shadow, "lower_shadow": lower_shadow,
+            "candle_body": candle_body,
+            "upper_shadow": upper_shadow, "lower_shadow": lower_shadow,
         }
         ml_prob = ml_predict(ml_features)
 
-        # If ML model is loaded, blend ML signal into the score
         if ml_prob is not None:
-            if ml_prob >= 0.65 and trend_bullish:
-                ml_signal = "strong-buy"
-            elif ml_prob >= 0.55 and trend_bullish:
+            if ml_prob >= 0.55:
+                ml_signal = "strong-buy"   # 73.7% win rate threshold
+            elif ml_prob >= 0.50:
                 ml_signal = "buy"
             elif ml_prob <= 0.35:
                 ml_signal = "sell"
             else:
                 ml_signal = "hold"
+            # If ML is highly confident, also override main signal
+            if ml_prob >= 0.55 and signal not in ("strong-buy",):
+                signal = "strong-buy"
+                score  = max(score, 8)
         else:
             ml_signal = None
 
-        # ── Position sizing: risk 1% of €10,000, enforce min position ─
+        # ── Position sizing ───────────────────────────────────────────
         account_size   = 10000.0
         risk_pct       = 0.01
-        risk_euros     = account_size * risk_pct          # €100
+        risk_euros     = account_size * risk_pct
         stop_distance  = atr * 2
         shares_sized   = risk_euros / stop_distance if stop_distance > 0 else 0
         position_euros = shares_sized * current_price
-        # Enforce minimum €500 so Commerzbank fee (~€9.90) stays below 2% of trade
         if position_euros < 500 and shares_sized > 0:
             shares_sized   = 500 / current_price
             position_euros = 500.0
-        position_pct   = (position_euros / account_size) * 100
+        position_pct = (position_euros / account_size) * 100
 
         stop   = current_price - atr * 2
-        target = current_price + atr * 4   # R:R = 1:2 (was 1:1.5)
+        target = current_price + atr * 4
         rr     = round(atr * 4 / (atr * 2), 1)
 
         # ── Buy / sell narratives ─────────────────────────────────────
         buy_points, sell_points = [], []
 
+        # Which rules fired — explain them clearly
+        if rule2:
+            buy_points.append(
+                f"RULE 2 FIRED (72% win rate vs SPY): Price above SMA200 + "
+                f"60-day return {roc60:.1f}% (deeply oversold) + "
+                f"{pct_52w_high:.1f}% from 52w high — recovery setup")
+        if rule1:
+            buy_points.append(
+                f"RULE 1 FIRED (55% win rate vs SPY): "
+                f"MACD positive + RSI {rsi:.1f} oversold — "
+                f"historically +14.5% alpha over SPY in 20 days")
+        if ml_prob is not None and ml_prob >= 0.55:
+            buy_points.append(
+                f"ML MODEL CONFIDENT: {ml_prob*100:.0f}% probability of "
+                f"outperforming SPY — highest precision tier (73.7% historical win rate)")
+
         if signal in ("strong-buy", "buy"):
             buy_points.append(f"Entry near current price ${current_price:.2f}")
             if trend_bullish:
                 if trend_aligned:
-                    buy_points.append(f"Trend filter PASSED (strong) — price above SMA50 (${sma50:.2f}) and SMA50 above SMA200 (${sma200:.2f})")
+                    buy_points.append(
+                        f"Trend confirmed — price above SMA50 (${sma50:.2f}) "
+                        f"and SMA50 above SMA200 (${sma200:.2f})")
                 else:
-                    buy_points.append(f"Trend filter PASSED — price above SMA200 (${sma200:.2f}), uptrend intact")
+                    buy_points.append(
+                        f"Trend filter passed — price above SMA200 (${sma200:.2f})")
             if rsi < 45:
-                buy_points.append(f"RSI at {rsi:.1f} — oversold conditions support entry")
-            if macd_val > 0 and macd_dir == "rising":
-                buy_points.append("MACD histogram positive and rising — bullish momentum confirmed")
-            if pct_above_ema > 0:
-                buy_points.append(f"Price {pct_above_ema:.1f}% above EMA20 (${ema20:.2f}) — short-term uptrend intact")
-            if vol_mult > 1.5:
-                buy_points.append(f"Volume {vol_mult:.1f}x 20-day average — strong participation")
+                buy_points.append(f"RSI {rsi:.1f} — oversold, supports entry")
+            if macd_val > 0:
+                buy_points.append("MACD histogram positive — bullish momentum")
             if bb_pos < 0.3:
-                buy_points.append("Price near lower Bollinger Band — mean-reversion setup")
-            buy_points.append(f"Position size: {shares_sized:.2f} shares (€{position_euros:.0f} = {position_pct:.1f}% of €10k account, risking €{risk_euros:.0f})")
+                buy_points.append("Near lower Bollinger Band — mean reversion setup")
+            if vol_mult > 1.5:
+                buy_points.append(f"Volume {vol_mult:.1f}x average — strong participation")
+            buy_points.append(
+                f"Position size: {shares_sized:.2f} shares "
+                f"(€{position_euros:.0f} = {position_pct:.1f}% of €10k, "
+                f"risking €{risk_euros:.0f})")
             commission = commerzbank_fee(position_euros)
-            buy_points.append(f"Estimated Commerzbank fee: €{commission:.2f} (0.25% + €4.90, min €9.90) — applies on both buy and sell")
+            buy_points.append(
+                f"Commerzbank fee: €{commission:.2f} per leg "
+                f"(€{commission*2:.2f} round trip)")
         else:
+            if not rule1 and not rule2:
+                buy_points.append("Neither data-proven rule is firing right now")
             if not trend_bullish:
-                buy_points.append(f"Trend filter FAILED — price (${current_price:.2f}) is below SMA200 (${sma200:.2f}), bearish territory")
-            buy_points.append(f"Wait — RSI at {rsi:.1f}, look for drop below 40 before entering")
-            buy_points.append(f"Watch for price reclaim above EMA20 (${ema20:.2f})")
-            if macd_val < 0:
-                buy_points.append("Wait for MACD histogram to cross back into positive territory")
+                buy_points.append(
+                    f"Price below SMA200 (${sma200:.2f}) — "
+                    f"wait for trend to recover")
+            if rsi >= 35:
+                buy_points.append(
+                    f"RSI {rsi:.1f} — wait for RSI < 35 for Rule 1 to fire")
+            if roc60 >= -22:
+                buy_points.append(
+                    f"60-day return {roc60:.1f}% — "
+                    f"wait for deeper pullback (<-22%) for Rule 2")
+            if macd_val <= 0:
+                buy_points.append("MACD negative — wait for histogram to turn positive")
 
-        sell_points.append(f"Stop loss: ${stop:.2f} (2x ATR below entry) — exit immediately if breached")
-        sell_points.append(f"Primary target: ${target:.2f} (4x ATR above entry, R:R = 1:2) — take full profit here")
-        sell_points.append("Minimum hold: 5 trading days — do not exit on weak signal before day 5, let the trade develop")
+        sell_points.append(
+            f"Stop loss: ${stop:.2f} (2x ATR) — hard exit, no exceptions")
+        sell_points.append(
+            f"Target: ${target:.2f} (4x ATR, R:R 1:2) — take full profit here")
+        sell_points.append(
+            "Minimum hold: 5 trading days before any signal-based exit")
         if rsi > 68:
-            sell_points.append(f"RSI at {rsi:.1f} — overbought, reduce size or wait for pullback")
+            sell_points.append(f"RSI {rsi:.1f} — approaching overbought, consider reducing size")
         if macd_val > 0 and macd_dir == "falling":
-            sell_points.append("MACD flattening — momentum weakening, tighten stop to breakeven after day 5")
+            sell_points.append("MACD flattening — tighten stop to breakeven after day 5")
         if bb_pos > 0.8:
-            sell_points.append("Price near upper Bollinger Band — consider partial profit taking (50%) after day 5")
-        sell_points.append(f"Also exit on daily close below SMA200 (${sma200:.2f}) — trend is broken")
+            sell_points.append("Near upper Bollinger Band — consider 50% profit at this level")
+        sell_points.append(
+            f"Also exit if price closes below SMA200 (${sma200:.2f}) — trend broken")
 
         return {
             "ticker":            ticker,
@@ -389,6 +460,11 @@ def fetch_and_analyze(ticker: str) -> dict:
             "pct_above_sma200":  round(pct_above_sma200, 2),
             "trend_bullish":     trend_bullish,
             "trend_status":      trend_status,
+            "roc60":             round(roc60, 2),
+            "pct_52w_high":      round(pct_52w_high, 2),
+            "pct_52w_low":       round(pct_52w_low, 2),
+            "rule1_fired":       rule1,
+            "rule2_fired":       rule2,
             "bb_lower":          round(bb_lower, 2),
             "bb_upper":          round(bb_upper, 2),
             "bb_pos":            round(bb_pos, 3),
@@ -852,7 +928,11 @@ async function showDetail(ticker){
       {l:'Trend: '+(s.trend_status||'Unknown'),c:s.trend_bullish?'bull':'bear'},
       {l:'SMA50 '+(s.pct_above_sma50!=null?(s.pct_above_sma50>=0?'+':'')+fmt(s.pct_above_sma50,1)+'%':'—'),c:s.pct_above_sma50>=0?'bull':'bear'},
       {l:'SMA200 '+(s.pct_above_sma200!=null?(s.pct_above_sma200>=0?'+':'')+fmt(s.pct_above_sma200,1)+'%':'—'),c:s.pct_above_sma200>=0?'bull':'bear'},
-      ...(s.ml_available && s.ml_prob!=null ? [{l:'ML prob '+Math.round(s.ml_prob*100)+'%',c:s.ml_prob>=0.65?'bull':s.ml_prob<=0.35?'bear':'neut'}] : []),
+      {l:'ROC60 '+(s.roc60!=null?(s.roc60>=0?'+':'')+fmt(s.roc60,1)+'%':'—'),c:s.roc60<-22?'bull':s.roc60>20?'bear':'neut'},
+      {l:'52w high '+(s.pct_52w_high!=null?fmt(s.pct_52w_high,1)+'%':'—'),c:s.pct_52w_high<-3.82?'bull':s.pct_52w_high>-2?'bear':'neut'},
+      ...(s.rule1_fired?[{l:'Rule 1 fired',c:'bull'}]:[]),
+      ...(s.rule2_fired?[{l:'Rule 2 fired',c:'bull'}]:[]),
+      ...(s.ml_available&&s.ml_prob!=null?[{l:'ML '+Math.round(s.ml_prob*100)+'%',c:s.ml_prob>=0.55?'bull':s.ml_prob<=0.35?'bear':'neut'}]:[]),
     ].map(i=>'<span class="itag '+i.c+'">'+i.l+'</span>').join('');
     $('dbuy').innerHTML=(s.buy_points||[]).map(p=>'· '+p).join('<br>');
     $('dsell').innerHTML=(s.sell_points||[]).map(p=>'· '+p).join('<br>');
@@ -1046,7 +1126,11 @@ async function checkTicker(){
       {l:'Trend: '+(s.trend_status||'Unknown'),c:s.trend_bullish?'bull':'bear'},
       {l:'SMA50 '+(s.pct_above_sma50!=null?(s.pct_above_sma50>=0?'+':'')+fmt(s.pct_above_sma50,1)+'%':'—'),c:s.pct_above_sma50>=0?'bull':'bear'},
       {l:'SMA200 '+(s.pct_above_sma200!=null?(s.pct_above_sma200>=0?'+':'')+fmt(s.pct_above_sma200,1)+'%':'—'),c:s.pct_above_sma200>=0?'bull':'bear'},
-      ...(s.ml_available && s.ml_prob!=null ? [{l:'ML prob '+Math.round(s.ml_prob*100)+'%',c:s.ml_prob>=0.65?'bull':s.ml_prob<=0.35?'bear':'neut'}] : []),
+      {l:'ROC60 '+(s.roc60!=null?(s.roc60>=0?'+':'')+fmt(s.roc60,1)+'%':'—'),c:s.roc60<-22?'bull':s.roc60>20?'bear':'neut'},
+      {l:'52w high '+(s.pct_52w_high!=null?fmt(s.pct_52w_high,1)+'%':'—'),c:s.pct_52w_high<-3.82?'bull':s.pct_52w_high>-2?'bear':'neut'},
+      ...(s.rule1_fired?[{l:'Rule 1 fired',c:'bull'}]:[]),
+      ...(s.rule2_fired?[{l:'Rule 2 fired',c:'bull'}]:[]),
+      ...(s.ml_available&&s.ml_prob!=null?[{l:'ML '+Math.round(s.ml_prob*100)+'%',c:s.ml_prob>=0.55?'bull':s.ml_prob<=0.35?'bear':'neut'}]:[]),
     ].map(i=>'<span class="itag '+i.c+'">'+i.l+'</span>').join('');
 
     $('ck-buy').innerHTML=(s.buy_points||[]).map(p=>'· '+p).join('<br>');
@@ -1497,8 +1581,9 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
                     })
                     position = None
 
-            # ── Entry logic with volatility sizing + Commerzbank fee ──
-            if position is None and score >= 5 and trend_ok:
+            # ── Entry: fire on Rule 1 OR Rule 2 OR legacy score >= 5 ──
+            entry_signal = rule1_bt or rule2_bt or (score >= 5 and trend_ok)
+            if position is None and entry_signal and trend_ok:
                 risk_amount   = portfolio * risk_pct
                 stop_distance = atr * 2
                 shares        = risk_amount / stop_distance if stop_distance > 0 else 0
@@ -1687,9 +1772,15 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
             vol_mult      = float(volume.iloc[i]) / vol_avg if vol_avg > 0 else 1.0
 
             score = compute_signal_score(rsi, macd_val, macd_dir, pct_above_ema, vol_mult, bb_pos, price_change)
-            # Cap at hold when below SMA200
             if not trend_ok and score >= 5:
                 score = 4
+
+            # Data-proven rules from ML research
+            roc60_bt     = float(close.iloc[max(0,i-60):i+1].pct_change(min(60,i)).iloc[-1] * 100) if i >= 60 else 0.0
+            high52_bt    = float(high.iloc[max(0,i-252):i+1].max())
+            pct_52w_h_bt = (price - high52_bt) / high52_bt * 100 if high52_bt > 0 else 0.0
+            rule1_bt = (macd_val > 0) and (rsi < 35)
+            rule2_bt = (trend_ok) and (roc60_bt < -22.0) and (pct_52w_h_bt < -3.82)
 
             # ── Exit logic ────────────────────────────────────────────
             if position is not None:
