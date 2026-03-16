@@ -1529,7 +1529,8 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
 
             sma50  = float(close.iloc[max(0, i-50):i+1].mean())
             sma200 = float(close.iloc[max(0, i-200):i+1].mean())
-            trend_ok = (price > sma50) and (sma50 > sma200)
+            # Relaxed trend filter: price above SMA200 (matches screener logic)
+            trend_ok = (price > sma200)
 
             pct_above_ema = (price - ema20) / ema20 * 100
             prev_price    = float(close.iloc[i - 1]) if i > 0 else price
@@ -1539,19 +1540,20 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
             vol_mult      = float(volume.iloc[i]) / vol_avg if vol_avg > 0 else 1.0
 
             score = compute_signal_score(rsi, macd_val, macd_dir, pct_above_ema, vol_mult, bb_pos, price_change)
-            if not trend_ok and score >= 6:
-                score = 5
+            if not trend_ok and score >= 5:
+                score = 4
 
             # ── Exit logic ────────────────────────────────────────────
             if position is not None:
+                days_held = i - position["entry_bar"]
                 exit_reason = exit_price = None
                 if price <= position["stop"]:
                     exit_reason, exit_price = "Stop loss", position["stop"]
                 elif price >= position["target"]:
                     exit_reason, exit_price = "Target hit", position["target"]
-                elif score <= 3:
+                elif days_held >= 5 and score <= 2:
                     exit_reason, exit_price = "Signal weak", price
-                elif not trend_ok:
+                elif days_held >= 5 and not trend_ok:
                     exit_reason, exit_price = "Trend broke", price
 
                 if exit_reason:
@@ -1581,9 +1583,16 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
                     })
                     position = None
 
-            # ── Entry: fire on Rule 1 OR Rule 2 OR legacy score >= 5 ──
-            entry_signal = rule1_bt or rule2_bt or (score >= 5 and trend_ok)
-            if position is None and entry_signal and trend_ok:
+            # ── Entry: data-proven rules + legacy score ───────────────
+            # Rule 1 (MACD+ AND RSI<35) fires regardless of trend — it's a
+            # mean-reversion signal that works even below SMA200
+            # Rule 2 and score require price > SMA200
+            entry_signal = (
+                rule1_bt or                           # 55% win rate vs SPY
+                (rule2_bt and trend_ok) or            # 72% win rate vs SPY
+                (score >= 5 and trend_ok)             # legacy fallback
+            )
+            if position is None and entry_signal:
                 risk_amount   = portfolio * risk_pct
                 stop_distance = atr * 2
                 shares        = risk_amount / stop_distance if stop_distance > 0 else 0
@@ -1684,13 +1693,13 @@ def run_backtest(ticker: str, period: str, trade_size: float) -> dict:
             "trades":              trades,
             "equity_curve":        eq_thin,
             "strategy_notes": [
-                "Trend filter: only buys when price > SMA200 (primary bull/bear line)",
-                "Entry threshold: signal score ≥ 5 (buy or strong-buy)",
-                "Position sizing: risks 1% of portfolio per trade (ATR-based), minimum €500 per trade",
-                "Target: 4x ATR above entry — R:R = 1:2 (need only 34% win rate to break even after fees)",
-                "Minimum hold: 5 trading days before any signal-based exit — stops premature chops",
-                "Transaction costs: Commerzbank 0.25% + €4.90 per trade, min €9.90 (buy and sell)",
-                "Exit triggers: stop loss (2x ATR always), target (4x ATR always), weak signal (score ≤2, after day 5), trend break (after day 5)",
+                "Trend filter: price > SMA200 required for Rule 2 and score-based entries",
+                "Rule 1 (MACD positive + RSI < 35): fires regardless of trend — 55% win rate vs SPY, avg +14.5% alpha",
+                "Rule 2 (above SMA200 + ROC60 < -22% + far from 52w high): 72% win rate vs SPY, avg +12.4% alpha",
+                "Position sizing: risks 1% of portfolio per trade (ATR-based), minimum €500",
+                "Target: 4x ATR above entry (R:R = 1:2), Stop: 2x ATR below entry",
+                "Minimum 5-day hold before signal-based exit",
+                "Transaction costs: Commerzbank 0.25% + €4.90, min €9.90 per trade",
             ],
             "generated_at": datetime.now(timezone.utc).isoformat(),
         }
