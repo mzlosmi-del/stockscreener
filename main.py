@@ -412,6 +412,7 @@ def fetch_and_analyze(ticker: str) -> dict:
                 score  = max(score, 6)
 
         # ── ML signal (if model available) ───────────────────────────
+        hist_vol_20  = float(close.pct_change().rolling(20).std().iloc[-1] * (252**0.5) * 100)
         obv          = (np.sign(close.diff()) * volume).fillna(0).cumsum()
         obv_slope    = float((obv.diff(5) / (obv.abs().rolling(5).mean() + 1e-9)).iloc[-1])
         vol_ratio_5  = float(volume.rolling(5).mean().iloc[-1] / avg_vol_20) if avg_vol_20 > 0 else 1.0
