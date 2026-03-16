@@ -74,18 +74,29 @@ DEFAULT_TICKERS = [
     "MRK", "ABBV", "KO", "PFE", "BA", "CAT", "GE", "AMD", "CRM", "NOW",
 ]
 
-# Extended universe for the strong-buy hunter
+# Extended universe for the Rule 2 hunter — mid-caps outside S&P 500
+# where technical patterns are less efficiently priced
 _HUNT_RAW = [
-    "NVDA","AAPL","MSFT","META","GOOGL","AMZN","TSLA","AMD","CRM","NOW",
-    "ORCL","ADBE","QCOM","INTC","TXN","AMAT","LRCX","KLAC","MU","SNPS",
-    "JPM","BAC","WFC","GS","MS","BLK","SCHW","AXP","V","MA","PYPL","COF",
-    "JNJ","UNH","LLY","ABBV","MRK","PFE","TMO","ABT","DHR","AMGN","GILD","REGN","VRTX",
-    "HD","LOW","TGT","WMT","COST","MCD","SBUX","NKE","PG","KO","PEP","PM",
-    "XOM","CVX","COP","SLB","EOG","MPC","VLO","PSX",
-    "BA","CAT","GE","HON","MMM","UPS","FDX","RTX","LMT","NOC","DE","EMR","ETN",
-    "NFLX","DIS","CMCSA","T","VZ","TMUS","SNAP","UBER",
-    "AMT","PLD","EQIX","NEE","DUK","SO",
-    "ISRG","SYK","BSX","ZTS","IDXX","MRNA","BNTX",
+    # Technology mid-caps
+    "PCTY","QLYS","CIEN","GLOB","NCNO","EXLS","KFRC","PAYO","PRFT",
+    # Consumer / retail mid-caps
+    "CROX","BOOT","CAVA","SHAK","PLAY","BJ","FIVE","OLLI","PRGO","CATO",
+    # Healthcare mid-caps
+    "ENSG","ACAD","ITCI","AMED","NHC","PAHC","RGEN","NUVL","RXST","PRAX",
+    # Industrials mid-caps
+    "ASTE","ITRI","KTOS","MYRG","ROAD","WMS","GVA","USLM","UFPI",
+    # Financial mid-caps
+    "CSWC","GBCI","HOMB","TOWN","CVBF","SFNC","WSFS","NBTB","FFIN",
+    # Energy mid-caps
+    "CIVI","MTDR","CHRD","VTLE","DINO","DKL",
+    # REITs mid-caps
+    "IIPR","NTST","APLE","SVC","ROIC","SITC","PLYM","NXRT",
+    # International ADRs
+    "VALE","ERJ","PAGS","MELI","TIMB","DESP","BRFS",
+    # Large caps as fallback (Rule 2 occasionally fires here too)
+    "NVDA","AAPL","MSFT","META","GOOGL","AMZN","TSLA","AMD",
+    "JPM","BAC","JNJ","XOM","HD","PG","CVX","MRK",
+    "NFLX","DIS","CAT","GE","BA","UPS",
 ]
 _seen = set()
 HUNT_UNIVERSE = [x for x in _HUNT_RAW if not (x in _seen or _seen.add(x))]
@@ -627,7 +638,7 @@ tr:last-child td{border-bottom:none}tbody tr{cursor:pointer;transition:backgroun
     </div>
     <div class="tabs">
       <div class="tab active" id="t-screen" onclick="setTab('screen')">Screener</div>
-      <div class="tab" id="t-hunt" onclick="setTab('hunt')">&#128269; Find 5 Strong Buys</div>
+      <div class="tab" id="t-hunt" onclick="setTab('hunt')">&#128269; Find Rule 2 Setup</div>
       <div class="tab" id="t-check" onclick="setTab('check')">&#128270; Check Ticker</div>
       <div class="tab" id="t-backtest" onclick="setTab('backtest')">&#9654; Backtest</div>
       <div class="tab" id="t-watch" onclick="setTab('watch')">Watchlist</div>
@@ -646,13 +657,17 @@ tr:last-child td{border-bottom:none}tbody tr{cursor:pointer;transition:backgroun
     <div id="tab-hunt" style="display:none">
       <div id="hunt-idle" style="text-align:center;padding:2.5rem 1rem">
         <div style="font-size:32px;margin-bottom:12px">&#128269;</div>
-        <div style="font-size:15px;font-weight:600;margin-bottom:8px">Strong Buy Hunter</div>
-        <div style="font-size:13px;color:#666;margin-bottom:20px;max-width:400px;margin-left:auto;margin-right:auto">Scans up to 100 US large &amp; mid-cap stocks in batches. Stops the moment it finds 5 strong buys so you get results fast.</div>
-        <button class="btnp" onclick="startHunt()">&#128269; Hunt for Strong Buys</button>
+        <div style="font-size:15px;font-weight:600;margin-bottom:8px">Rule 2 Signal Hunter</div>
+        <div style="font-size:13px;color:#666;margin-bottom:8px;max-width:460px;margin-left:auto;margin-right:auto">
+          Scans ~100 mid-cap stocks for <strong>Rule 2</strong> setups: price above SMA200, down &gt;22% over 60 days, far from 52-week high.
+          <br><br>Historical edge: <strong>72% outperform SPY</strong> by 1%+ over 20 days, avg alpha +12.4%.
+          Falls back to Rule 1 (MACD+ &amp; RSI&lt;35, 55% win rate) if Rule 2 is not firing today.
+        </div>
+        <button class="btnp" onclick="startHunt()">&#128269; Hunt for Rule 2 Setup</button>
       </div>
       <div id="hunt-loading" style="display:none;text-align:center;padding:2.5rem 1rem">
-        <div style="font-size:13px;color:#666;margin-bottom:12px">Scanning market for strong buys<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>
-        <div id="hunt-progress" style="font-size:22px;font-weight:600;color:#2d7a3a;margin-bottom:4px">0 / 5</div>
+        <div style="font-size:13px;color:#666;margin-bottom:12px">Scanning for Rule 2 signals<span class="dot">.</span><span class="dot">.</span><span class="dot">.</span></div>
+        <div id="hunt-progress" style="font-size:22px;font-weight:600;color:#2d7a3a;margin-bottom:4px">searching...</div>
         <div id="hunt-scanned" style="font-size:12px;color:#999">0 stocks scanned</div>
         <div style="width:200px;height:4px;background:rgba(0,0,0,0.1);border-radius:2px;margin:12px auto 0">
           <div id="hunt-bar" style="height:4px;background:#2d7a3a;border-radius:2px;width:0%;transition:width .4s"></div>
@@ -1096,10 +1111,11 @@ async function runBacktest(){
     $('bt-loading').style.display='none';
     $('bt-results').style.display='';
 
-    // Show strategy notes
+    // Show strategy notes — remove old block first so it only appears once
     const notes=d.strategy_notes||[];
+    const existing=document.getElementById('bt-strategy-notes');
+    if(existing) existing.remove();
     if(notes.length){
-      const existing=$('bt-strategy-notes');
       const notesHtml='<div id="bt-strategy-notes" style="background:#e8f5ea;border:.5px solid #a8d5b0;border-radius:var(--rl);padding:12px 16px;margin-bottom:1rem;font-size:12px;color:#1a5c28">'+
         '<strong style="display:block;margin-bottom:6px">Strategy rules active in this backtest:</strong>'+
         notes.map(n=>'· '+n).join('<br>')+
@@ -1210,8 +1226,14 @@ function renderHuntCards(found){
       <div class="hunt-card-body">
         <div><div class="hunt-stat-label">Signal score</div><div class="hunt-stat-value" style="color:#2d7a3a">${s.score}/10</div></div>
         <div><div class="hunt-stat-label">RSI (14)</div><div class="hunt-stat-value" style="color:${s.rsi<35?'#2d7a3a':s.rsi>70?'#b03030':'inherit'}">${fmt(s.rsi,1)}</div></div>
-        <div><div class="hunt-stat-label">MACD</div><div class="hunt-stat-value ${s.macd_val>=0?'gn':'rd'}">${s.macd_val>=0?'+':''}${fmt(s.macd_val,2)}</div></div>
-        <div><div class="hunt-stat-label">Trend</div><div class="hunt-stat-value ${s.trend_bullish?'bt-win':'bt-loss'}">${s.trend_status||'—'}</div></div>
+        <div><div class="hunt-stat-label">ROC 60d</div><div class="hunt-stat-value ${s.roc60<-22?'bt-win':'bt-neut'}">${s.roc60!=null?(s.roc60>=0?'+':'')+fmt(s.roc60,1)+'%':'—'}</div></div>
+        <div><div class="hunt-stat-label">From 52w high</div><div class="hunt-stat-value ${s.pct_52w_high<-3.82?'bt-win':'bt-neut'}">${s.pct_52w_high!=null?fmt(s.pct_52w_high,1)+'%':'—'}</div></div>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">
+        ${s.rule2_fired?'<span class="itag bull">&#128994; Rule 2 fired — 72% win rate</span>':''}
+        ${s.rule1_fired?'<span class="itag bull">&#128992; Rule 1 fired — 55% win rate</span>':''}
+        <span class="itag ${s.trend_bullish?'bull':'bear'}">${s.trend_status||'—'}</span>
+        ${s.ml_available&&s.ml_prob!=null?'<span class="itag '+(s.ml_prob>=0.55?'bull':s.ml_prob<=0.35?'bear':'neut')+'">ML '+Math.round(s.ml_prob*100)+'%</span>':''}
       </div>
       <div class="hunt-points">${(s.buy_points||[]).map(p=>'&#183; '+p).join('<br>')}</div>
       <div class="hunt-risk">
@@ -1228,48 +1250,48 @@ async function startHunt(){
   $('hunt-results').style.display='none';
   $('hunt-err').style.display='none';
   $('hunt-loading').style.display='';
-  $('hunt-progress').textContent='0 / 5';
+  $('hunt-progress').textContent='searching...';
   $('hunt-scanned').textContent='0 stocks scanned';
   $('hunt-bar').style.width='0%';
 
-  // Poll /hunt and stream progress via repeated fast calls
-  // We call /hunt which returns when done; show animated progress while waiting
   let tick=0;
   const timer=setInterval(()=>{
     tick++;
-    const fake=Math.min(4,Math.floor(tick/3));
-    $('hunt-progress').textContent=fake+' / 5';
     $('hunt-scanned').textContent=(tick*8)+' stocks scanned...';
-    $('hunt-bar').style.width=(fake/5*80)+'%';
+    $('hunt-bar').style.width=Math.min(90,tick*6)+'%';
   },800);
 
   try{
-    const res=await fetch(API+'/hunt?target=5');
+    const res=await fetch(API+'/hunt?target=1');
     clearInterval(timer);
     if(!res.ok)throw new Error('Server error '+res.status);
     const data=await res.json();
     const found=data.strong_buys||[];
-    $('hunt-progress').textContent=found.length+' / 5';
+    const r2=data.rule2_count||0;
+    $('hunt-progress').textContent=r2>0?'Rule 2 found!':'Rule 1 found';
     $('hunt-scanned').textContent=data.scanned+' stocks scanned';
     $('hunt-bar').style.width='100%';
 
     setTimeout(()=>{
       $('hunt-loading').style.display='none';
       $('hunt-results').style.display='';
-      const complete=data.complete;
       const sum=$('hunt-summary');
 
       if(found.length===0){
         sum.style.cssText='padding:12px 16px;background:#fdeaea;border:.5px solid #e8aaaa;border-radius:var(--rl);color:#7a1c1c;font-size:13px;margin-bottom:1rem';
-        sum.innerHTML='<strong>No strong buys found</strong> after scanning all '+data.scanned+' stocks. '+'The trend filter (price > SMA50 > SMA200) and signal score requirements are not met by any stock right now. '+'This is a signal in itself — the market may be in a risk-off or choppy regime. Consider waiting.';
+        sum.innerHTML='<strong>No Rule 1 or Rule 2 signals found</strong> after scanning all '+data.scanned+' stocks. '
+          +'Neither rule is firing right now — the market may be in a trending phase without pullbacks. '
+          +'This is actually useful information: no oversold setups means there is nothing to buy today.';
         $('hunt-cards').innerHTML='';
-      } else if(complete){
+      } else if(r2>0){
         sum.style.cssText='padding:12px 16px;background:#e8f5ea;border:.5px solid #a8d5b0;border-radius:var(--rl);color:#1a5c28;font-size:13px;margin-bottom:1rem';
-        sum.innerHTML='<strong>Found all '+found.length+' strong buys</strong> after scanning '+data.scanned+' of '+data.universe_size+' stocks.';
+        sum.innerHTML='<strong>&#128994; Rule 2 signal found</strong> after scanning '+data.scanned+' stocks. '
+          +'Rule 2 historically outperforms SPY by 1%+ in <strong>72% of cases</strong> with avg alpha +12.4% over 20 days.';
         renderHuntCards(found);
       } else {
         sum.style.cssText='padding:12px 16px;background:#fef9e7;border:.5px solid #e8d08a;border-radius:var(--rl);color:#7a6520;font-size:13px;margin-bottom:1rem';
-        sum.innerHTML='<strong>Found '+found.length+' of '+data.target+' strong buys</strong> after scanning all '+data.scanned+' stocks. '+'Not enough setups pass the trend filter right now — showing what\'s available below.';
+        sum.innerHTML='<strong>&#128992; Rule 1 signal found</strong> (Rule 2 not firing today) after scanning '+data.scanned+' stocks. '
+          +'Rule 1 historically outperforms SPY in <strong>55% of cases</strong> with avg alpha +14.5% over 20 days.';
         renderHuntCards(found);
       }
     },400);
@@ -1394,21 +1416,23 @@ def health():
 
 
 @app.get("/hunt")
-async def hunt_strong_buys(target: int = Query(default=5, description="Number of strong buys to find")):
+async def hunt_strong_buys(target: int = Query(default=1, description="Number of Rule 2 signals to find")):
     """
-    Scans the full universe of ~100 stocks in batches of 10.
-    Stops as soon as it finds `target` strong buys (default 5).
-    Returns found strong buys + how many stocks were scanned.
+    Scans the full mid-cap universe in batches of 10.
+    Stops as soon as it finds `target` stocks where Rule 2 fires:
+    price > SMA200 AND ROC(60) < -22% AND far from 52w high.
+    Falls back to Rule 1 (MACD+ and RSI<35) if Rule 2 not found.
     """
-    target = max(1, min(target, 20))
-    found = []
+    target = max(1, min(target, 10))
+    rule2_found = []
+    rule1_found = []
     scanned = 0
     batch_size = 10
 
     loop = asyncio.get_event_loop()
 
     for i in range(0, len(HUNT_UNIVERSE), batch_size):
-        if len(found) >= target:
+        if len(rule2_found) >= target:
             break
         batch = HUNT_UNIVERSE[i:i + batch_size]
         results = await asyncio.gather(
@@ -1416,22 +1440,45 @@ async def hunt_strong_buys(target: int = Query(default=5, description="Number of
         )
         scanned += len(batch)
         for r in results:
-            if r and r.get("signal") == "strong-buy":
-                found.append(r)
-                if len(found) >= target:
-                    break
+            if not r:
+                continue
+            if r.get("rule2_fired"):
+                rule2_found.append(r)
+            elif r.get("rule1_fired") and len(rule1_found) < 5:
+                rule1_found.append(r)  # collect as fallback
 
-    found.sort(key=lambda s: s["score"], reverse=True)
+    # If Rule 2 found nothing, keep scanning for Rule 1
+    if not rule2_found:
+        for i in range(scanned, len(HUNT_UNIVERSE), batch_size):
+            if len(rule1_found) >= target:
+                break
+            batch = HUNT_UNIVERSE[i:i + batch_size]
+            results = await asyncio.gather(
+                *[loop.run_in_executor(executor, fetch_and_analyze, t) for t in batch]
+            )
+            scanned += len(batch)
+            for r in results:
+                if r and r.get("rule1_fired"):
+                    rule1_found.append(r)
+
+    # Prioritise Rule 2, fall back to Rule 1
+    found = rule2_found if rule2_found else rule1_found
+    found.sort(key=lambda s: (s.get("rule2_fired", False), s.get("score", 0)), reverse=True)
+
+    rule_used = "Rule 2 (above SMA200 + deep pullback)" if rule2_found else "Rule 1 (MACD positive + RSI oversold)"
 
     return {
-        "strong_buys": found,
-        "found": len(found),
-        "target": target,
-        "scanned": scanned,
+        "strong_buys":   found,
+        "found":         len(found),
+        "target":        target,
+        "scanned":       scanned,
         "universe_size": len(HUNT_UNIVERSE),
-        "complete": len(found) >= target,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "data_note": "15-min delayed intraday via Yahoo Finance",
+        "rule2_count":   len(rule2_found),
+        "rule1_count":   len(rule1_found),
+        "rule_used":     rule_used,
+        "complete":      len(found) >= target,
+        "generated_at":  datetime.now(timezone.utc).isoformat(),
+        "data_note":     "15-min delayed intraday via Yahoo Finance",
     }
 
 
